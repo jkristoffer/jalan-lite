@@ -257,6 +257,7 @@ function queryMatch(update, routes, stops) {
 
 function alertMatch(alert, routes, stops) {
   if (!routes.length && !stops.length) return true;
+  if (!alert.selectors.length) return true;
   return alert.selectors.some((selector) => routes.some((route) => selector.routeId && canonicalLine(route) === canonicalLine(selector.routeId)) || stops.some((stop) => selector.stopId && (stop === selector.stopId || stop.endsWith(selector.stopId) || selector.stopId.endsWith(stop))));
 }
 

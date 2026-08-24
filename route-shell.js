@@ -181,7 +181,7 @@
   function timeline(itinerary) {
     const legs = itinerary?.legs || [];
     if (!legs.length) return '<div class="timeline-empty">No step-by-step details returned.</div>';
-    return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<button type="button" class="timeline-item${selectedLegIndex === index ? ' selected' : ''}" data-route-action="leg" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div><div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></button>`).join('')}</div>`;
+    return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<button type="button" class="timeline-item${selectedLegIndex === index ? ' selected' : ''}${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? ' affected' : ''}" data-route-action="leg" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div>${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? '<div class="timeline-alert-label">LTA service alert</div>' : ''}<div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></button>`).join('')}</div>`;
   }
 
   function itinerarySignature(itinerary) {
@@ -220,13 +220,25 @@
     return `${choice}Best route now`;
   }
 
+  function disruptionBanner(itinerary) {
+    const alerts = (itinerary?.liveAlerts || []).filter((alert) => alert.header || alert.description);
+    if (!alerts.length) return '';
+    const first = alerts[0];
+    const rerouting = routeState.status === 'rerouting';
+    const detail = first.description && first.description !== first.header ? `<p>${escapeHtml(first.description)}</p>` : '';
+    const count = alerts.length > 1 ? `${alerts.length} LTA alerts` : 'Affects this journey';
+    return `<div class="route-disruption" role="alert"><div class="route-disruption-top"><span class="route-disruption-label"><span class="live-dot"></span>LTA service alert</span><span class="route-disruption-count">${escapeHtml(count)}</span></div><strong>${escapeHtml(first.header || first.description)}</strong>${detail}<button class="route-disruption-action" data-route-action="reroute" ${rerouting ? 'disabled' : ''}>${rerouting ? 'Finding a better route…' : 'Find a better route'}</button></div>`;
+  }
+
   function card() {
     if (!saved.originPoint || !saved.destinationPoint) return '<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Map both endpoints</h2><p>Choose exact points so Jalan can calculate the journey.</p></section>';
     if (routeState.status === 'loading') return '<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Finding route…</h2><p>Checking Singapore public transport.</p></section>';
     if (routeState.status === 'error') return `<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Routing unavailable</h2><p>${escapeHtml(routeState.error)}</p><button class="route-link" data-route-action="refresh">Retry</button></section>`;
     const itinerary = routeState.data;
     if (!itinerary) return '';
-    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
+    const rerouting = routeState.status === 'rerouting' ? '<div class="route-rerouting" role="status">Recalculating with the latest route data…</div>' : '';
+    const notice = routeState.notice ? `<div class="route-inline-notice" role="status">${escapeHtml(routeState.notice)}</div>` : '';
+    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
   }
 
   function dashboard() {
@@ -545,6 +557,31 @@
     return Boolean(a && b && (a === b || a.endsWith(b) || b.endsWith(a)));
   }
 
+  function trainAlertMatches(leg, alert) {
+    const selectors = alert?.selectors || [];
+    if (!selectors.length) return true;
+    const routeKey = trainLineKey(leg.routeName || leg.lineName);
+    return selectors.some((selector) => {
+      const routeMatch = selector.routeId && routeKey && trainLineKey(selector.routeId) === routeKey;
+      const stopMatch = selector.stopId && (sameStop(selector.stopId, leg.fromId) || sameStop(selector.stopId, leg.toId));
+      return routeMatch || stopMatch;
+    });
+  }
+
+  function relevantTrainAlerts(itinerary, payload) {
+    const legs = (itinerary?.legs || []).filter((leg) => leg.mode === 'SUBWAY');
+    const seen = new Set();
+    return (payload?.alerts || [])
+      .filter((alert) => legs.some((leg) => trainAlertMatches(leg, alert)))
+      .filter((alert) => {
+        const key = alert.id || alert.header || alert.description;
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 3);
+  }
+
   function trainMatch(leg, payload) {
     const updates = payload?.updates || [];
     const routeKey = trainLineKey(leg.routeName || leg.lineName);
@@ -556,12 +593,12 @@
     const orderedStops = [...(update.stops || [])].sort((a, b) => (a.stopSequence || 0) - (b.stopSequence || 0));
     const fromStop = orderedStops.find((stop) => sameStop(stop.stopId, leg.fromId)) || orderedStops.find((stop) => stop.departureTime || stop.arrivalTime);
     const toStop = orderedStops.find((stop) => sameStop(stop.stopId, leg.toId)) || [...orderedStops].reverse().find((stop) => stop.arrivalTime || stop.departureTime);
-    const alert = (payload.alerts || []).find((item) => item.header && (item.selectors || []).some((selector) => (selector.routeId && trainLineKey(selector.routeId) === routeKey) || (selector.stopId && (sameStop(selector.stopId, leg.fromId) || sameStop(selector.stopId, leg.toId)))));
+    const alert = (payload.alerts || []).find((item) => (item.header || item.description) && trainAlertMatches(leg, item));
     return {
       departureTime: fromStop?.departureTime || fromStop?.arrivalTime || 0,
       arrivalTime: toStop?.arrivalTime || toStop?.departureTime || 0,
       delay: fromStop?.departureDelay || fromStop?.arrivalDelay || update.delay || 0,
-      alertText: alert?.header || '',
+      alertText: alert?.header || alert?.description || '',
     };
   }
 
@@ -578,6 +615,8 @@
       const response = await fetch(`/api/train-realtime?${query}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'LTA train feed unavailable.');
+      itinerary.liveAlerts = relevantTrainAlerts(itinerary, payload);
+      itinerary.trainFeedUpdatedAt = payload.updatedAt || '';
       legs.forEach((leg) => {
         leg.trainRealtime = trainMatch(leg, payload);
         leg.trainStatus = 'ready';
@@ -601,17 +640,30 @@
     if (routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
   }
 
-  async function routeData() {
+  async function routeData({ preserveCurrent = false } = {}) {
+    if (preserveCurrent && routeState.status === 'rerouting') return;
+    const previous = preserveCurrent ? routeState.data : null;
+    const previousUpdatedAt = liveUpdatedAt;
+    const previousRefreshStatus = liveRefreshStatus;
     selectedLegIndex = null;
     liveUpdatedAt = 0;
     liveRefreshStatus = 'loading';
-    routeState = { status: 'loading', data: null, error: '' }; render();
+    routeState = { status: previous ? 'rerouting' : 'loading', data: previous || null, error: '', notice: '' }; render();
     const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(saved.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
     try {
       const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`); const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Routing unavailable.'); const itinerary = normalizeRoute(data); if (!itinerary) throw new Error('No public-transport itinerary.');
       routeState = { status: 'ready', data: itinerary, error: '' }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) { const degraded = liveHasError(itinerary); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
-    } catch (error) { routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' }; render(); }
+    } catch (error) {
+      if (previous) {
+        liveUpdatedAt = previousUpdatedAt;
+        liveRefreshStatus = previousRefreshStatus;
+        routeState = { status: 'ready', data: previous, error: '', notice: `Could not find a better route: ${error.message || 'routing is unavailable.'} Your current route is still shown.` };
+      } else {
+        routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' };
+      }
+      render();
+    }
   }
 
   function bind() {
@@ -634,6 +686,7 @@
         else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
         else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; viewing = true; render(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
+        else if (action === 'reroute') routeData({ preserveCurrent: true });
         else if (action === 'viewer' && routeState.data) { selectedLegIndex = null; viewing = true; render(); }
         else if (action === 'close-viewer') { viewing = false; selectedLegIndex = null; render(); refreshLiveTimings(); }
       };
