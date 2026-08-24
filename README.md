@@ -10,6 +10,7 @@ A lightweight Singapore bus-arrival app based on the Claude Design prototype.
 - Uses device location to find nearby LTA bus stops.
 - Uses Mapbox GL JS for the stop-selection map.
 - Keeps the LTA DataMall Account Key server-side in a Vercel Function.
+- Uses LTA GTFS-Realtime train trip updates and service alerts for MRT legs when the feed has a matching line or station.
 
 ## Vercel setup
 

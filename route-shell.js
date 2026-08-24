@@ -126,6 +126,16 @@
       if (arrivals.length) return `<div class="leg-live"><span class="live-dot"></span>${arrivals.map((value) => `<b>${value === 0 ? 'Arr' : `${value} min`}</b>`).join('')}<em>live</em></div>`;
     }
     if (leg.mode === 'BUS' && leg.liveStatus === 'loading') return '<div class="leg-live muted">Checking live arrivals…</div>';
+    if (leg.mode === 'SUBWAY' && leg.trainStatus === 'loading') return '<div class="leg-live muted">Checking LTA train updates…</div>';
+    if (leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText) return `<div class="leg-live alert"><span class="live-dot"></span><b>${escapeHtml(leg.trainRealtime.alertText)}</b><em>LTA alert</em></div>`;
+    if (leg.mode === 'SUBWAY' && leg.trainRealtime && (leg.trainRealtime.departureTime || leg.trainRealtime.arrivalTime)) {
+      const departure = leg.trainRealtime.departureTime ? timeAt(leg.trainRealtime.departureTime) : '—';
+      const arrival = leg.trainRealtime.arrivalTime ? timeAt(leg.trainRealtime.arrivalTime) : '—';
+      const delay = leg.trainRealtime.delay ? ` · ${Math.round(leg.trainRealtime.delay / 60)} min delay` : '';
+      return `<div class="leg-live train"><span class="live-dot"></span><b>${departure} → ${arrival}</b><em>live${delay}</em></div>`;
+    }
+    if (leg.mode === 'SUBWAY' && leg.trainStatus === 'ready') return '<div class="leg-live train"><span class="live-dot"></span><b>Realtime feed connected</b><em>LTA</em></div>';
+    if (leg.mode === 'SUBWAY' && leg.trainStatus === 'error') return '<div class="leg-live scheduled"><b>Schedule fallback</b><em>LTA unavailable</em></div>';
     if (leg.mode === 'SUBWAY' && leg.departureTime) return `<div class="leg-live scheduled"><b>${timeAt(leg.departureTime)}</b><em>scheduled</em></div>`;
     return '';
   }
@@ -184,8 +194,10 @@
     const itinerary = routeState.data;
     const hasBus = itinerary?.legs.some((leg) => leg.mode === 'BUS');
     const hasMrt = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY');
-    const sourceCopy = `${hasBus ? 'Bus legs show LTA real-time arrivals. ' : ''}${hasMrt ? 'MRT times are currently schedule-based.' : ''}`;
-    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing sources</div><h2>Bus live · MRT scheduled</h2></div><span class="live-state">LTA</span></div><p>${escapeHtml(sourceCopy || 'Live timing appears with the calculated route.')}</p></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Refresh route + timings</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+    const trainLive = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY' && leg.trainStatus === 'ready');
+    const sourceCopy = `${hasBus ? 'Bus legs show LTA real-time arrivals. ' : ''}${hasMrt ? (trainLive ? 'MRT legs use LTA GTFS-Realtime trip updates when available.' : 'MRT legs use OneMap schedule timings with a live-feed fallback.') : ''}`;
+    const sourceHeading = `Bus ${hasBus ? 'live' : '—'} · MRT ${hasMrt ? (trainLive ? 'live' : 'scheduled') : '—'}`;
+    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing sources</div><h2>${sourceHeading}</h2></div><span class="live-state">LTA</span></div><p>${escapeHtml(sourceCopy || 'Live timing appears with the calculated route.')}</p></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Refresh route + timings</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
   }
 
   function viewer() {
@@ -373,13 +385,77 @@
     }));
   }
 
+  function trainLineKey(value) {
+    const token = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const aliases = {
+      NSL: ['NSL', 'NS', 'NORTHSOUTH', 'NORTHSOUTHLINE'],
+      EWL: ['EWL', 'EW', 'EASTWEST', 'EASTWESTLINE'],
+      NEL: ['NEL', 'NE', 'NORTHEAST', 'NORTHEASTLINE'],
+      CCL: ['CCL', 'CC', 'CIRCLE', 'CIRCLELINE'],
+      DTL: ['DTL', 'DT', 'DOWNTOWN', 'DOWNTOWNLINE'],
+      TEL: ['TEL', 'TE', 'THOMSONEASTCOAST', 'THOMSONEASTCOASTLINE'],
+      BPL: ['BPL', 'BP', 'BUKITPANJANG', 'BUKITPANJANGLRT'],
+      SGL: ['SGL', 'SE', 'SENGKANG', 'SENGKANGLRT'],
+      PGL: ['PGL', 'PE', 'PUNGGOL', 'PUNGGOLLRT'],
+    };
+    return Object.entries(aliases).find(([, values]) => values.some((alias) => token === alias || token.includes(alias)))?.[0] || token;
+  }
+
+  function sameStop(left, right) {
+    const a = String(left || '').toUpperCase();
+    const b = String(right || '').toUpperCase();
+    return Boolean(a && b && (a === b || a.endsWith(b) || b.endsWith(a)));
+  }
+
+  function trainMatch(leg, payload) {
+    const updates = payload?.updates || [];
+    const routeKey = trainLineKey(leg.routeName || leg.lineName);
+    const routeUpdates = updates.filter((update) => !update.routeId || !routeKey || trainLineKey(update.routeId) === routeKey);
+    const candidates = routeUpdates.length ? routeUpdates : updates.filter((update) => update.stops?.some((stop) => sameStop(stop.stopId, leg.fromId) || sameStop(stop.stopId, leg.toId)));
+    const update = candidates.find((item) => item.stops?.some((stop) => sameStop(stop.stopId, leg.fromId)) && item.stops?.some((stop) => sameStop(stop.stopId, leg.toId))) || candidates.find((item) => item.stops?.some((stop) => sameStop(stop.stopId, leg.fromId))) || candidates[0];
+    if (!update) return null;
+
+    const orderedStops = [...(update.stops || [])].sort((a, b) => (a.stopSequence || 0) - (b.stopSequence || 0));
+    const fromStop = orderedStops.find((stop) => sameStop(stop.stopId, leg.fromId)) || orderedStops.find((stop) => stop.departureTime || stop.arrivalTime);
+    const toStop = orderedStops.find((stop) => sameStop(stop.stopId, leg.toId)) || [...orderedStops].reverse().find((stop) => stop.arrivalTime || stop.departureTime);
+    const alert = (payload.alerts || []).find((item) => item.header && (item.selectors || []).some((selector) => (selector.routeId && trainLineKey(selector.routeId) === routeKey) || (selector.stopId && (sameStop(selector.stopId, leg.fromId) || sameStop(selector.stopId, leg.toId)))));
+    return {
+      departureTime: fromStop?.departureTime || fromStop?.arrivalTime || 0,
+      arrivalTime: toStop?.arrivalTime || toStop?.departureTime || 0,
+      delay: fromStop?.departureDelay || fromStop?.arrivalDelay || update.delay || 0,
+      alertText: alert?.header || '',
+    };
+  }
+
+  async function liveTrain(itinerary) {
+    const legs = itinerary.legs.filter((leg) => leg.mode === 'SUBWAY');
+    if (!legs.length) return;
+    legs.forEach((leg) => { leg.trainStatus = 'loading'; });
+    const routes = [...new Set(legs.flatMap((leg) => [leg.routeName, leg.lineName]).filter(Boolean))];
+    const stops = [...new Set(legs.flatMap((leg) => [leg.fromId, leg.toId]).filter(Boolean))];
+    try {
+      const query = new URLSearchParams();
+      if (routes.length) query.set('routes', routes.join(','));
+      if (stops.length) query.set('stops', stops.join(','));
+      const response = await fetch(`/api/train-realtime?${query}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'LTA train feed unavailable.');
+      legs.forEach((leg) => {
+        leg.trainRealtime = trainMatch(leg, payload);
+        leg.trainStatus = 'ready';
+      });
+    } catch {
+      legs.forEach((leg) => { leg.trainStatus = 'error'; });
+    }
+  }
+
   async function routeData() {
     routeState = { status: 'loading', data: null, error: '' }; render();
     const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : '';
     try {
       const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}`); const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Routing unavailable.'); const itinerary = normalizeRoute(data); if (!itinerary) throw new Error('No public-transport itinerary.');
-      routeState = { status: 'ready', data: itinerary, error: '' }; render(); await liveBus(itinerary); if (routeState.data === itinerary) render();
+      routeState = { status: 'ready', data: itinerary, error: '' }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) render();
     } catch (error) { routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' }; render(); }
   }
 
