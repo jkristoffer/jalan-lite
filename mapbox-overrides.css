@@ -1,7 +1,12 @@
 .mapboxgl-map{font-family:'Barlow',Helvetica,sans-serif}
 .mapboxgl-canvas{outline:none}
 .mapboxgl-ctrl-bottom-left,.mapboxgl-ctrl-bottom-right{z-index:2}
-.mapboxgl-ctrl-attrib{font-size:9px;line-height:14px;background:rgba(247,246,243,.82)!important}
+.mapboxgl-ctrl-bottom-left{left:6px;bottom:6px}
+.mapboxgl-ctrl-bottom-right{right:6px;bottom:6px}
+.mapboxgl-ctrl-attrib{font-size:9px;line-height:14px;background:rgba(247,246,243,.86)!important;border-radius:8px;padding:1px 5px!important;box-shadow:0 1px 5px rgba(18,20,21,.08)}
 .mapboxgl-ctrl-attrib-button{width:22px;height:22px}
-.mapboxgl-ctrl-logo{opacity:.72;transform:scale(.82);transform-origin:left bottom}
+.mapboxgl-ctrl-logo{opacity:.58;transform:scale(.74);transform-origin:left bottom}
 .mapboxgl-marker{will-change:transform}
+.mapboxgl-marker:has(.stop-marker){z-index:3}
+.mapboxgl-marker:has(.stop-marker.selected){z-index:6}
+.mapboxgl-marker:has(.location-dot){z-index:5}
