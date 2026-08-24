@@ -1,4 +1,4 @@
-const SHELL_CACHE='jalan-lite-shell-v2';
+const SHELL_CACHE='jalan-lite-shell-v3';
 const RUNTIME_CACHE='jalan-lite-runtime-v1';
 const SHELL_ASSETS=[
   '/',
