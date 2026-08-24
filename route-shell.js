@@ -18,6 +18,9 @@
   let liveRefreshInFlight = false;
   let liveUpdatedAt = 0;
   let liveRefreshStatus = 'idle';
+  let disruptionDemoOpen = false;
+  let disruptionDemoStep = 'alert';
+  let disruptionDemoTimer = null;
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -113,6 +116,7 @@
         <button class="route-primary" data-route-action="save" ${draftState.origin && draftState.destination ? '' : 'disabled'}>${saved ? 'Update' : 'Save'} commute</button>
       </div>
       <button class="route-link" data-route-action="bus">I only need bus arrivals</button>
+      <button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button>
     </div>`;
   }
 
@@ -249,7 +253,36 @@
     const trainLive = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY' && leg.trainStatus === 'ready');
     const sourceCopy = `${hasBus ? 'Bus legs show LTA real-time arrivals. ' : ''}${hasMrt ? (trainLive ? 'MRT legs use LTA GTFS-Realtime trip updates when available.' : 'MRT legs use OneMap schedule timings with a live-feed fallback.') : ''}${hasBus || hasMrt ? ' Live timings refresh every 45 seconds while this screen is open.' : ''}`;
     const sourceHeading = `Bus ${hasBus ? 'live' : '—'} · MRT ${hasMrt ? (trainLive ? 'live' : 'scheduled') : '—'}`;
-    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing sources</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state">LTA</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(sourceCopy || 'Live timing appears with the calculated route.')}</p></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Refresh route + timings</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing sources</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state">LTA</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(sourceCopy || 'Live timing appears with the calculated route.')}</p><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Refresh route + timings</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+  }
+
+  function demoTimeline(rerouted) {
+    const legs = rerouted ? [
+      { mode: 'WALK', title: 'Walk to Paya Lebar MRT', meta: '320 m · 4 min', times: '8:30 → 8:34' },
+      { mode: 'SUBWAY', title: 'MRT · Circle Line', meta: 'Paya Lebar → Promenade · 5 stops', times: '8:36 → 8:51' },
+      { mode: 'WALK', title: 'Walk to destination', meta: '650 m · 9 min', times: '8:51 → 9:00' },
+    ] : [
+      { mode: 'WALK', title: 'Walk to Paya Lebar MRT', meta: '320 m · 4 min', times: '8:30 → 8:34' },
+      { mode: 'SUBWAY', title: 'MRT · East West Line', meta: 'Paya Lebar → City Hall · 6 stops', times: '8:37 → 8:55', affected: true },
+      { mode: 'WALK', title: 'Walk to destination', meta: '600 m · 8 min', times: '8:55 → 9:03' },
+    ];
+    return `<div class="route-demo-timeline">${legs.map((leg, index) => `<div class="route-demo-leg${leg.affected ? ' affected' : ''}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(leg.title)}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(leg.meta)}</div>${leg.affected ? '<div class="timeline-alert-label">Affected service</div>' : ''}<div class="timeline-foot"><span>${escapeHtml(leg.times)}</span>${leg.mode === 'SUBWAY' ? `<span class="route-demo-live">${leg.affected ? 'Alert' : 'Live alternative'}</span>` : ''}</div></div></div>${index === 0 ? '<div class="route-demo-transfer">Boarding point · Paya Lebar MRT</div>' : ''}`).join('')}</div>`;
+  }
+
+  function disruptionDemo() {
+    const rerouted = disruptionDemoStep === 'rerouted';
+    const fallback = disruptionDemoStep === 'fallback';
+    const rerouting = disruptionDemoStep === 'rerouting';
+    const duration = rerouted ? '30 min' : '33 min';
+    const summary = rerouted ? 'Rerouted via Circle Line' : fallback ? 'Current route kept' : 'East West Line disruption';
+    const alertClass = rerouted ? ' resolved' : '';
+    const status = rerouting ? '<div class="route-demo-status" role="status">Checking OneMap alternatives…</div>' : fallback ? '<div class="route-inline-notice" role="status">No unaffected alternative was found. Your current route remains available.</div>' : rerouted ? '<div class="route-demo-success" role="status">Rerouted via Circle Line to avoid the affected service.</div>' : '';
+    let actions = '';
+    if (rerouting) actions = '<button class="route-primary" data-route-action="demo-reroute" disabled>Checking alternatives…</button>';
+    else if (rerouted) actions = '<button class="route-primary" data-route-action="demo-reset">Replay alert</button><button class="route-link" data-route-action="demo-fallback">Preview no-safe-route fallback</button>';
+    else if (fallback) actions = '<button class="route-primary" data-route-action="demo-reroute">Try reroute again</button><button class="route-link" data-route-action="demo-reset">Back to alert</button>';
+    else actions = '<button class="route-primary" data-route-action="demo-reroute">Find a better route</button><button class="route-link" data-route-action="demo-fallback">Preview no-safe-route fallback</button>';
+    return `<div class="route-demo"><div class="route-demo-inner">${brand()}<div class="route-demo-topbar"><button class="picker-back" data-route-action="demo-close">‹</button><div><div class="route-kicker">Interaction preview</div><div class="picker-title">Disruption flow</div></div></div><div class="route-demo-intro"><div class="route-kicker">Mock LTA incident</div><h1>${escapeHtml(summary)}</h1><p>See how Jalan warns the commuter, finds an alternative, and handles a route with no safe replacement.</p></div><section class="route-demo-alert${alertClass}"><div class="route-demo-alert-top"><span class="route-disruption-label"><span class="live-dot"></span>LTA service alert</span><span class="route-demo-preview-tag">PREVIEW</span></div><h2>East West Line disruption</h2><p>Trains are delayed between Paya Lebar and City Hall.</p></section>${status}<section class="route-demo-card"><div class="route-demo-summary"><div><span class="route-card-label">Journey</span><strong>${duration}</strong></div><span>${rerouted ? '0 transfers' : '1 transfer'}</span></div><div class="route-demo-route-label">${escapeHtml(rerouted ? 'Replacement route' : 'Original route')}</div>${demoTimeline(rerouted)}</section><div class="route-demo-actions">${actions}</div><p class="route-demo-footnote">Mock UI only — no live route or LTA data was changed.</p></div></div>`;
   }
 
   function hasLiveTiming(itinerary) {
@@ -275,7 +308,7 @@
   }
 
   function canRefreshLive() {
-    return Boolean(saved && routeState.status === 'ready' && routeState.data && hasLiveTiming(routeState.data) && !pickerField && !viewing && !document.hidden && !shell.hidden);
+    return Boolean(saved && routeState.status === 'ready' && routeState.data && hasLiveTiming(routeState.data) && !pickerField && !viewing && !disruptionDemoOpen && !document.hidden && !shell.hidden);
   }
 
   function stopLiveRefresh() {
@@ -341,7 +374,7 @@
   function render() {
     destroyMap();
     shell.hidden = false;
-    shell.innerHTML = pickerField ? picker() : (viewing ? viewer() : (saved ? dashboard() : setup()));
+    shell.innerHTML = pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (viewing ? viewer() : (saved ? dashboard() : setup())));
     bind();
     if (pickerField) requestAnimationFrame(renderPickerMap);
     if (viewing) requestAnimationFrame(renderViewerMap);
@@ -674,7 +707,12 @@
     shell.querySelectorAll('[data-route-action]').forEach((button) => {
       button.onclick = () => {
         const action = button.dataset.routeAction;
-        if (action === 'bus') { stopLiveRefresh(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
+        if (action === 'demo-disruption') { stopLiveRefresh(); disruptionDemoOpen = true; disruptionDemoStep = 'alert'; render(); }
+        else if (action === 'demo-close') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoOpen = false; disruptionDemoStep = 'alert'; render(); refreshLiveTimings(); }
+        else if (action === 'demo-reroute') { if (disruptionDemoStep === 'rerouting') return; disruptionDemoStep = 'rerouting'; render(); disruptionDemoTimer = window.setTimeout(() => { disruptionDemoTimer = null; if (disruptionDemoOpen) { disruptionDemoStep = 'rerouted'; render(); } }, 700); }
+        else if (action === 'demo-reset') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'alert'; render(); }
+        else if (action === 'demo-fallback') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'fallback'; render(); }
+        else if (action === 'bus') { stopLiveRefresh(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
         else if (action === 'edit') { draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); routeState = { status: 'idle', data: null, error: '' }; render(); } }
         else if (action === 'clear') { stopLiveRefresh(); localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }

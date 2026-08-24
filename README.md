@@ -16,6 +16,7 @@ A lightweight Singapore bus-arrival app based on the Claude Design prototype.
 - Refreshes live bus and train timings every 45 seconds while the commute screen is active.
 - Surfaces matching LTA train service alerts and can recalculate a replacement route while preserving the current route if routing fails.
 - Chooses reroute alternatives that avoid the affected MRT line or station when OneMap returns one.
+- Includes a clearly labelled mock disruption flow for demos and QA without changing live route data.
 
 ## Vercel setup
 
