@@ -22,7 +22,25 @@
   <link rel="stylesheet" href="/styles.css">
   <style>
     body,.app-shell,.screen{min-height:100dvh}
+    .screen:has(.list-lines:empty) .list-lines{margin-top:0;border-top:0;flex:1;display:flex;align-items:center;justify-content:center}
+    .screen:has(.list-lines:empty) .list-lines::after{content:'No commute saved yet.';color:var(--muted);font-size:16px}
+    .screen:has(.list-lines:empty) .grow{display:none}
   </style>
+  <script>
+    (()=>{
+      const key='jalan-lite-presets-v1';
+      try{
+        const stored=localStorage.getItem(key);
+        if(stored===null){
+          localStorage.setItem(key,'[]');
+          return;
+        }
+        const presets=JSON.parse(stored);
+        const isLegacyDemo=Array.isArray(presets)&&presets.length===1&&presets[0]?.id==='morning-commute'&&presets[0]?.stopCode==='54009';
+        if(isLegacyDemo)localStorage.setItem(key,'[]');
+      }catch{}
+    })();
+  </script>
   <script src="/pwa.js" defer></script>
 </head>
 <body>
