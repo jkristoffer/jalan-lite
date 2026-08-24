@@ -1,10 +1,12 @@
-const SHELL_CACHE='jalan-lite-shell-v1';
+const SHELL_CACHE='jalan-lite-shell-v2';
 const RUNTIME_CACHE='jalan-lite-runtime-v1';
 const SHELL_ASSETS=[
   '/',
   '/index.html',
   '/styles.css',
+  '/route-shell.css',
   '/app.js',
+  '/route-shell.js',
   '/pwa.js',
   '/mapbox-overrides.css',
   '/map-polish.css',
