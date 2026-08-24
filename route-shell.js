@@ -25,6 +25,7 @@ function networkBadges(){return`<div class="sg-network"><span class="sg-line ns"
 function brand(){return`<div class="route-brand"><div class="route-wordmark">jalan</div><div class="route-country">SG</div></div>`}
 function fmtDuration(seconds){const min=Math.max(1,Math.round(Number(seconds||0)/60));return`${min} min`}
 function fmtDistance(m){const n=Number(m||0);return n>=1000?`${(n/1000).toFixed(1)} km`:`${Math.round(n)} m`}
+function fmtTime(ms){if(!ms)return'';return new Intl.DateTimeFormat('en-SG',{timeZone:'Asia/Singapore',hour:'numeric',minute:'2-digit'}).format(new Date(Number(ms)))}
 
 function setupView(){
  const canSave=draft.origin&&draft.destination;
@@ -45,7 +46,8 @@ function routeCard(){
  const itinerary=routeState.data?.itinerary;
  if(!itinerary)return`<section class="best-route-card"><div class="route-card-label">Best route</div><h2>Ready to route</h2><p>Route data will load automatically when OneMap routing credentials are available.</p></section>`;
  const legs=(itinerary.legs||[]).map(leg=>`<div class="route-leg"><span class="leg-mode ${String(leg.mode||'').toLowerCase()}">${esc(leg.mode||'PT')}</span><div><strong>${esc(leg.label||leg.mode||'Travel')}</strong><span>${esc(leg.detail||'')}</span></div></div>`).join('');
- return`<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">Best route now</div><h2>${fmtDuration(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers??0} transfer${itinerary.transfers===1?'':'s'}</div></div><div class="route-legs">${legs}</div></section>`
+ const isNext=itinerary.service==='next';const departure=fmtTime(itinerary.startTime);const label=isNext?`Next available route${departure?` · ${departure}`:''}`:'Best route now';
+ return`<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${label}</div><h2>${fmtDuration(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers??0} transfer${itinerary.transfers===1?'':'s'}</div></div><div class="route-legs">${legs}</div></section>`
 }
 function dashboardView(){return`<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journeyCard()}${routeCard()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Live timings</div><h2>Bus live · MRT next</h2></div><span class="live-state">LTA</span></div><p>Bus arrivals remain available now. MRT real-time data will plug into the calculated route separately.</p></section><div class="route-actions"><button class="route-primary" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`}
 
@@ -90,18 +92,7 @@ function useMyLocation(){
 function normalizeItinerary(raw){
  const plan=raw?.plan||raw?.data?.plan;const it=plan?.itineraries?.[0];if(!it)return null;
  const legs=(it.legs||[]).map(leg=>{const mode=String(leg.mode||'').toUpperCase();const from=leg.from?.name||'';const to=leg.to?.name||'';const routeName=leg.routeShortName||leg.route||leg.agencyName||'';const label=mode==='WALK'?`Walk ${fmtDistance(leg.distance)}`:(routeName?`${mode} ${routeName}`:mode);return{mode,label,detail:[from,to].filter(Boolean).join(' → ')}});
- return{duration:Number(it.duration||0),transfers:Number(it.transfers||0),legs}
+ return{duration:Number(it.duration||0),transfers:Number(it.transfers||0),startTime:Number(it.startTime||0),service:raw?._jalan?.service||'now',legs}
 }
 async function loadRouteData(){
- routeState={status:'loading',data:null,error:null};render();
- const start=`${route.originPoint.lat},${route.originPoint.lng}`,end=`${route.destinationPoint.lat},${route.destinationPoint.lng}`;
- try{const r=await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);const d=await r.json();if(!r.ok)throw new Error(d.error||'Routing unavailable.');const itinerary=normalizeItinerary(d);if(!itinerary)throw new Error('OneMap returned no public-transport itinerary.');routeState={status:'ready',data:{itinerary},error:null}}catch(e){routeState={status:'error',data:null,error:e.message}}render()
-}
-
-function bind(){
- shell.querySelectorAll('[data-route-pick]').forEach(b=>b.addEventListener('click',()=>openPicker(b.dataset.routePick)));
- const manual=document.getElementById('picker-manual-input'),manualBtn=shell.querySelector('[data-route-action="use-manual"]');if(manual){manual.addEventListener('input',()=>{if(manualBtn)manualBtn.disabled=!manual.value.trim()});manual.addEventListener('keydown',e=>{if(e.key==='Enter'&&manual.value.trim()){e.preventDefault();useManual()}})}
- shell.querySelectorAll('[data-route-action]').forEach(b=>b.addEventListener('click',()=>{const a=b.dataset.routeAction;if(a==='bus'){destroyMap();shell.hidden=true;launcher.hidden=false}else if(a==='edit'){draft=makeDraft(route);route=null;routeState={status:'idle',data:null,error:null};render()}else if(a==='save-route'){if(!draft.origin||!draft.destination)return;saveRoute({id:'route-1',...draft,updatedAt:new Date().toISOString()});routeState={status:'idle',data:null,error:null};render()}else if(a==='clear'){localStorage.removeItem(ROUTE_KEY);route=null;draft=makeDraft(null);routeState={status:'idle',data:null,error:null};render()}else if(a==='cancel-picker')closePicker();else if(a==='confirm-picker')confirmPicker();else if(a==='use-manual')useManual();else if(a==='my-location')useMyLocation();else if(a==='retry-route'){routeState={status:'idle',data:null,error:null};render()}}));
-}
-launcher.addEventListener('click',()=>{shell.hidden=false;launcher.hidden=true;render()});document.body.append(shell,launcher);render();
-})();
+ routeState={status:'loading',data:null,error:null
