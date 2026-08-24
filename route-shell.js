@@ -22,6 +22,8 @@
   let disruptionDemoOpen = false;
   let disruptionDemoStep = 'alert';
   let disruptionDemoTimer = null;
+  let notificationState = 'idle';
+  let notificationMessage = '';
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -264,6 +266,78 @@
     return ({ live: 'live', partial: 'partly live', alert: 'alert', checking: 'checking', fallback: 'fallback', scheduled: 'scheduled' })[status] || '—';
   }
 
+  function notificationSupportIssue() {
+    if (window.isSecureContext === false) return 'Notifications require a secure HTTPS connection.';
+    if (!('Notification' in window)) return 'This browser does not support web notifications.';
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'Push notifications are not available in this browser.';
+    return '';
+  }
+
+  function notificationsCard() {
+    const copy = notificationState === 'pending'
+      ? 'The browser flow is ready, but server-side push delivery still needs to be connected.'
+      : notificationState === 'denied'
+        ? 'Notifications are blocked. Allow them in browser settings, then try again.'
+        : notificationState === 'unsupported'
+          ? notificationMessage
+          : notificationState === 'error'
+            ? notificationMessage
+            : 'Get a push alert when LTA reports a disruption affecting this saved commute.';
+    const buttonLabel = notificationState === 'loading' ? 'Checking…' : notificationState === 'pending' ? 'Check setup again' : notificationState === 'denied' ? 'Try again' : 'Enable disruption alerts';
+    const tone = ['pending', 'denied', 'unsupported', 'error'].includes(notificationState) ? ` notification-${notificationState}` : '';
+    return `<section class="notifications-card${tone}"><div class="route-card-label">Disruption alerts</div><h2>Know before you leave.</h2><p>${escapeHtml(copy)}</p>${notificationMessage && notificationState !== 'unsupported' && notificationState !== 'error' ? `<div class="notification-status" role="status">${escapeHtml(notificationMessage)}</div>` : ''}<button type="button" class="notification-button" data-route-action="notifications" ${notificationState === 'loading' ? 'disabled' : ''}>${buttonLabel}</button></section>`;
+  }
+
+  function decodePushKey(value) {
+    const padding = '='.repeat((4 - (value.length % 4)) % 4);
+    const binary = window.atob(`${value.replace(/-/g, '+').replace(/_/g, '/')}${padding}`);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  }
+
+  async function enableNotifications() {
+    const issue = notificationSupportIssue();
+    if (issue) {
+      notificationState = 'unsupported';
+      notificationMessage = issue;
+      render();
+      return;
+    }
+
+    notificationState = 'loading';
+    notificationMessage = 'Checking push setup…';
+    render();
+    try {
+      const response = await fetch('/api/push-config');
+      const data = await response.json();
+      if (!response.ok || !data.publicKey) {
+        notificationState = 'pending';
+        notificationMessage = 'Add the VAPID key and subscription store before asking for permission.';
+        render();
+        return;
+      }
+
+      const permission = window.Notification.permission === 'granted' ? 'granted' : await window.Notification.requestPermission();
+      if (permission !== 'granted') {
+        notificationState = 'denied';
+        notificationMessage = 'Permission was not granted on this device.';
+        render();
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodePushKey(data.publicKey) });
+      localStorage.setItem('jalan-lite-push-subscription-v1', JSON.stringify(subscription.toJSON()));
+      notificationState = 'pending';
+      notificationMessage = 'Permission granted on this device. Server delivery still needs to be connected.';
+      render();
+    } catch (error) {
+      notificationState = 'error';
+      notificationMessage = error?.message || 'Could not prepare notifications on this device.';
+      render();
+    }
+  }
+
   function dashboard() {
     const itinerary = routeState.data;
     const hasBus = itinerary?.legs.some((leg) => leg.mode === 'BUS');
@@ -275,7 +349,7 @@
     const sourceHeading = `Bus ${hasBus ? modeStatusLabel(busStatus) : '—'} · MRT ${hasMrt ? modeStatusLabel(mrtStatus) : '—'}`;
     const refreshDisabled = liveRefreshInFlight || liveRefreshStatus === 'loading' || !hasLiveTiming(itinerary);
     const refreshLabel = liveRefreshInFlight || liveRefreshStatus === 'loading' ? 'Updating…' : 'Refresh live data';
-    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing confidence</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state live-state-${escapeHtml(summary.tone)}">${escapeHtml(summary.label)}</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class="timing-controls"><span class="timing-control-note">${escapeHtml(liveFreshness())}</span><button type="button" class="timing-refresh" data-route-action="refresh-live" ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Recalculate route</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing confidence</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state live-state-${escapeHtml(summary.tone)}">${escapeHtml(summary.label)}</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class="timing-controls"><span class="timing-control-note">${escapeHtml(liveFreshness())}</span><button type="button" class="timing-refresh" data-route-action="refresh-live" ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section>${notificationsCard()}<div class="route-actions"><button class="route-primary" data-route-action="refresh">Recalculate route</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
   }
 
   function demoTimeline(rerouted) {
@@ -755,6 +829,7 @@
         else if (action === 'locate') locate();
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'refresh-live') refreshLiveTimings();
+        else if (action === 'notifications') enableNotifications();
         else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
         else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; viewing = true; render(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);

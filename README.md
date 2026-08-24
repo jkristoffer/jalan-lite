@@ -18,6 +18,7 @@ A lightweight Singapore bus-arrival app based on the Claude Design prototype.
 - Chooses reroute alternatives that avoid the affected MRT line or station when OneMap returns one.
 - Includes a clearly labelled mock disruption flow for demos and QA without changing live route data.
 - Shows per-leg live, scheduled, or fallback confidence with LTA/OneMap sources and refresh age.
+- Includes the opt-in disruption-alert UI and service-worker push handler; delivery still needs VAPID and subscription storage configuration.
 
 ## Vercel setup
 
