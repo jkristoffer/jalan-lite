@@ -1,17 +1,14 @@
 (()=>{
 const ROUTE_KEY='jalan-lite-routes-v1';
+const SG_CENTER={lat:1.3521,lng:103.8198};
 const shell=document.createElement('section');
 const launcher=document.createElement('button');
-const SG_CENTER={lng:103.8198,lat:1.3521};
-const MAPBOX_JS='https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.js';
-const MAPBOX_CSS='https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.css';
 let route=loadRoute();
 let draft=makeDraft(route);
 let pickerField=null;
-let pendingPoint=null;
-let pickerController=null;
-let mapAssetsPromise=null;
-let mapTokenPromise=null;
+let picker={center:{...SG_CENTER},zoom:14,label:'Singapore'};
+let routeState={status:'idle',data:null,error:null};
+let drag=null;
 
 shell.className='route-shell';
 launcher.className='route-launcher';
@@ -19,144 +16,79 @@ launcher.type='button';
 launcher.textContent='Commute';
 launcher.hidden=true;
 
-function esc(value=''){
-  return String(value).replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
-}
+function esc(value=''){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function makeDraft(value){return{origin:value?.origin||'',destination:value?.destination||'',originPoint:value?.originPoint||null,destinationPoint:value?.destinationPoint||null}}
-function loadRoute(){try{const value=JSON.parse(localStorage.getItem(ROUTE_KEY));return value&&typeof value.origin==='string'&&typeof value.destination==='string'?value:null}catch{return null}}
+function loadRoute(){try{const v=JSON.parse(localStorage.getItem(ROUTE_KEY));return v&&typeof v.origin==='string'&&typeof v.destination==='string'?v:null}catch{return null}}
 function saveRoute(next){route=next;draft=makeDraft(next);localStorage.setItem(ROUTE_KEY,JSON.stringify(next))}
-function timeout(promise,ms,message){return Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error(message)),ms))])}
-
-function loadStyle(href,id){
-  const previous=document.getElementById(id);
-  if(previous?.dataset.ready==='1')return Promise.resolve();
-  if(previous)previous.remove();
-  return new Promise((resolve,reject)=>{
-    const link=document.createElement('link');
-    link.id=id;link.rel='stylesheet';link.href=href;
-    link.onload=()=>{link.dataset.ready='1';resolve()};
-    link.onerror=()=>{link.remove();reject(new Error('Unable to load map styles.'))};
-    document.head.appendChild(link);
-  });
-}
-function loadScript(src,id){
-  if(window.mapboxgl)return Promise.resolve();
-  const previous=document.getElementById(id);
-  if(previous)previous.remove();
-  return new Promise((resolve,reject)=>{
-    const script=document.createElement('script');
-    script.id=id;script.src=src;script.async=true;
-    script.onload=()=>window.mapboxgl?resolve():reject(new Error('Mapbox did not initialise.'));
-    script.onerror=()=>{script.remove();reject(new Error('Unable to load Mapbox.'))};
-    document.head.appendChild(script);
-  });
-}
-function ensureMapbox(){
-  if(window.mapboxgl)return Promise.resolve(window.mapboxgl);
-  if(!mapAssetsPromise){
-    mapAssetsPromise=timeout(Promise.all([loadStyle(MAPBOX_CSS,'mapbox-gl-css'),loadScript(MAPBOX_JS,'mapbox-gl-js')]).then(()=>window.mapboxgl),6000,'Map assets took too long to load.')
-      .catch(error=>{mapAssetsPromise=null;throw error});
-  }
-  return mapAssetsPromise;
-}
-function getMapToken(){
-  if(!mapTokenPromise){
-    mapTokenPromise=timeout(fetch('/api/map-config').then(async response=>{const data=await response.json();if(!response.ok||!data.token)throw new Error(data.error||'Map is not configured.');return data.token}),4000,'Map configuration timed out.')
-      .catch(error=>{mapTokenPromise=null;throw error});
-  }
-  return mapTokenPromise;
-}
-function cleanSingaporeLabel(value){return String(value||'').replace(/,\s*Singapore(?:\s+\d{6})?$/i,'').replace(/\s+/g,' ').trim()}
-async function reverseGeocode(lng,lat){
-  const token=await getMapToken();
-  const url=new URL('https://api.mapbox.com/search/geocode/v6/reverse');
-  url.searchParams.set('longitude',String(lng));url.searchParams.set('latitude',String(lat));url.searchParams.set('country','sg');url.searchParams.set('language','en');url.searchParams.set('limit','1');url.searchParams.set('access_token',token);
-  const response=await timeout(fetch(url),4000,'Location lookup timed out.');
-  if(!response.ok)throw new Error('Unable to identify this area.');
-  const data=await response.json();const feature=data.features?.[0];const props=feature?.properties||{};
-  return cleanSingaporeLabel(props.full_address||[props.name_preferred||props.name,props.place_formatted].filter(Boolean).join(', ')||feature?.place_name||'Selected area')||'Selected area';
-}
-async function forwardGeocode(query){
-  const token=await getMapToken();
-  const url=new URL('https://api.mapbox.com/search/geocode/v6/forward');
-  url.searchParams.set('q',query);url.searchParams.set('country','sg');url.searchParams.set('language','en');url.searchParams.set('limit','1');url.searchParams.set('proximity',`${SG_CENTER.lng},${SG_CENTER.lat}`);url.searchParams.set('access_token',token);
-  const response=await timeout(fetch(url),4000,'Address lookup timed out.');
-  if(!response.ok)throw new Error('Unable to resolve this location.');
-  const data=await response.json();const feature=data.features?.[0];if(!feature)return null;
-  const coords=feature.geometry?.coordinates;if(!Array.isArray(coords)||coords.length<2)return null;
-  const props=feature.properties||{};
-  const label=cleanSingaporeLabel(props.full_address||[props.name_preferred||props.name,props.place_formatted].filter(Boolean).join(', ')||feature.place_name||query)||query;
-  return{label,lng:Number(coords[0]),lat:Number(coords[1])};
-}
-
-function networkBadges(){return`<div class="sg-network" aria-label="Singapore MRT line colours"><span class="sg-line ns">NS</span><span class="sg-line ew">EW</span><span class="sg-line ne">NE</span><span class="sg-line cc">CC</span><span class="sg-line dt">DT</span><span class="sg-line te">TE</span></div>`}
+function networkBadges(){return`<div class="sg-network"><span class="sg-line ns">NS</span><span class="sg-line ew">EW</span><span class="sg-line ne">NE</span><span class="sg-line cc">CC</span><span class="sg-line dt">DT</span><span class="sg-line te">TE</span></div>`}
 function brand(){return`<div class="route-brand"><div class="route-wordmark">jalan</div><div class="route-country">SG</div></div>`}
-function showShell(){shell.hidden=false;launcher.hidden=true;render()}
-function showLegacyBus(){destroyPicker();shell.hidden=true;launcher.hidden=false}
-function locationValue(field){if(draft[field])return esc(draft[field]);return field==='origin'?'Choose where you start':'Choose where you’re going'}
+function staticMapUrl(){const p=new URLSearchParams({layerchosen:'default',latitude:String(picker.center.lat),longitude:String(picker.center.lng),postal:'',zoom:String(picker.zoom),width:'512',height:'512',points:`[${picker.center.lat},${picker.center.lng}]`});return`https://www.onemap.gov.sg/api/staticmap/getStaticImage?${p}`}
+function fmtDuration(seconds){const min=Math.max(1,Math.round(Number(seconds||0)/60));return`${min} min`}
+function fmtDistance(m){const n=Number(m||0);return n>=1000?`${(n/1000).toFixed(1)} km`:`${Math.round(n)} m`}
 
 function setupView(){
-  const canSave=draft.origin&&draft.destination;
-  return`<div class="route-panel">${brand()}<div class="route-setup-copy"><div class="route-kicker">Bus + MRT · Singapore</div><h1>Pick your regular trip.</h1><p>Choose an area on the map, use GPS, or type it manually.</p>${networkBadges()}</div><div class="route-form"><div class="route-input-card"><button class="route-location-row" type="button" data-route-pick="origin"><span class="route-node origin" aria-hidden="true"></span><span class="route-field-copy"><span class="route-field-label">From</span><span class="route-location-value${draft.origin?'':' placeholder'}">${locationValue('origin')}</span></span><span class="route-map-action" aria-hidden="true">Choose</span></button><button class="route-location-row" type="button" data-route-pick="destination"><span class="route-node destination" aria-hidden="true"></span><span class="route-field-copy"><span class="route-field-label">To</span><span class="route-location-value${draft.destination?'':' placeholder'}">${locationValue('destination')}</span></span><span class="route-map-action" aria-hidden="true">Choose</span></button></div><div class="route-form-hint">Manual entries are geocoded when possible so they can still be used for routing.</div><button class="route-primary" type="button" data-route-action="save-route" ${canSave?'':'disabled'}>${route?'Update commute':'Save commute'}</button></div><button class="route-link" type="button" data-route-action="bus">I only need bus arrivals</button></div>`;
+ const canSave=draft.origin&&draft.destination;
+ const row=(field,label,placeholder,node)=>`<button class="route-location-row" type="button" data-route-pick="${field}"><span class="route-node ${node}" aria-hidden="true"></span><span class="route-field-copy"><span class="route-field-label">${label}</span><span class="route-location-value${draft[field]?'':' placeholder'}">${esc(draft[field]||placeholder)}</span></span><span class="route-map-action">Choose</span></button>`;
+ return`<div class="route-panel">${brand()}<div class="route-setup-copy"><div class="route-kicker">Bus + MRT · Singapore</div><h1>Where are you going?</h1><p>Pick a point on OneMap, use your location, or enter a Singapore place manually.</p>${networkBadges()}</div><div class="route-form"><div class="route-input-card">${row('origin','From','Choose where you start','origin')}${row('destination','To','Choose where you’re going','destination')}</div><div class="route-form-hint">Exact map coordinates unlock public-transport routing.</div><button class="route-primary" type="button" data-route-action="save-route" ${canSave?'':'disabled'}>${route?'Update commute':'Save commute'}</button></div><button class="route-link" type="button" data-route-action="bus">I only need bus arrivals</button></div>`
 }
-function pickerView(){
-  const fieldLabel=pickerField==='origin'?'starting point':'destination';const current=draft[pickerField]||'';
-  return`<div class="route-picker"><div class="picker-topbar"><button class="picker-back" type="button" data-route-action="cancel-picker" aria-label="Back">‹</button><div><div class="route-kicker">Choose ${fieldLabel}</div><div class="picker-title">Map or type a place</div></div></div><div class="route-picker-map-wrap"><div id="route-picker-map" class="route-picker-map" aria-label="Map of Singapore"></div><div class="picker-crosshair" aria-hidden="true"><span></span></div><div id="picker-loading" class="picker-loading">Loading Singapore map…</div><button class="picker-locate" type="button" data-route-action="my-location">◎ My location</button></div><div class="picker-sheet"><div class="route-card-label">${pickerField==='origin'?'From':'To'}</div><div id="picker-label" class="picker-place">${esc(pendingPoint?.label||'Move the map to choose an area')}</div><div id="picker-coords" class="picker-coords">${pendingPoint?`${pendingPoint.lat.toFixed(5)}, ${pendingPoint.lng.toFixed(5)}`:'Singapore'}</div><button class="route-primary" type="button" data-route-action="confirm-picker" ${pendingPoint?'':'disabled'}>Use map selection</button><div class="picker-divider"><span>or type a place</span></div><div class="picker-manual-row"><input id="picker-manual-input" class="picker-manual-input" value="${esc(current)}" placeholder="Tampines MRT, Blk 123, Raffles Place…" autocomplete="street-address" enterkeyhint="done"><button class="picker-manual-button" type="button" data-route-action="use-manual" ${current?'':'disabled'}>Use</button></div><div id="picker-manual-hint" class="picker-manual-hint">We’ll try to resolve the text to exact Singapore coordinates. If lookup fails, the label is still saved.</div></div></div>`;
-}
-function journeyCard(){
-  const originResolved=route.originPoint?' · mapped':'';const destinationResolved=route.destinationPoint?' · mapped':'';
-  return`<section class="journey-card" aria-label="Saved commute"><div class="journey-row"><span class="route-node origin" aria-hidden="true"></span><div><div class="journey-label">From${originResolved}</div><div class="journey-place">${esc(route.origin)}</div></div></div><div class="journey-row"><span class="route-node destination" aria-hidden="true"></span><div><div class="journey-label">To${destinationResolved}</div><div class="journey-place">${esc(route.destination)}</div></div></div></section>`;
-}
-function dashboardView(){return`<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" type="button" data-route-action="edit">Edit</button></div>${journeyCard()}<section class="best-route-card" aria-labelledby="best-route-title"><div class="route-card-top"><div><div class="route-card-label">Best route</div><h2 id="best-route-title">Waiting for routing data</h2></div><div class="mode-pills"><span>BUS</span><span>MRT</span></div></div><p>Next, this card will show the fastest public-transport sequence, walking legs, transfers and total journey time.</p></section><section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">MRT timings</div><h2>Live feed coming next</h2></div><span class="live-state">Not live</span></div>${networkBadges()}<p>Train estimates stay hidden until the LTA GTFS-Realtime feed is parsed and matched to this commute.</p></section><div class="route-actions"><button class="route-primary" type="button" data-route-action="bus">Open bus arrivals</button><button class="route-link" type="button" data-route-action="clear">Remove saved commute</button></div></div>`}
 
-function destroyPicker(){if(pickerController){pickerController.destroy();pickerController=null}}
-function updatePickerText(point){const label=document.getElementById('picker-label');const coords=document.getElementById('picker-coords');const confirm=shell.querySelector('[data-route-action="confirm-picker"]');if(label)label.textContent=point?.label||'Move the map to choose an area';if(coords)coords.textContent=point?`${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`:'Singapore';if(confirm)confirm.disabled=!point}
-function setMapFailure(message){
-  const loading=document.getElementById('picker-loading');if(!loading)return;
-  loading.hidden=false;loading.innerHTML=`<div><strong>Map unavailable</strong><span>${esc(message||'Type the location below instead.')}</span><button type="button" class="route-link picker-retry">Retry map</button></div>`;
-  loading.querySelector('.picker-retry')?.addEventListener('click',()=>{loading.innerHTML='Retrying map…';mountPicker()});
+function pickerView(){
+ const current=draft[pickerField]||'';
+ return`<div class="route-picker"><div class="picker-topbar"><button class="picker-back" type="button" data-route-action="cancel-picker" aria-label="Back">‹</button><div><div class="route-kicker">${pickerField==='origin'?'From':'To'}</div><div class="picker-title">Choose on OneMap</div></div></div><div class="onemap-stage" id="onemap-stage"><img id="onemap-image" src="${esc(staticMapUrl())}" alt="OneMap Singapore map" draggable="false"><div class="picker-crosshair" aria-hidden="true"><span></span></div><div class="map-tools"><button type="button" data-route-action="zoom-in">+</button><button type="button" data-route-action="zoom-out">−</button></div><button class="picker-locate" type="button" data-route-action="my-location">◎ My location</button><div class="onemap-attrib">OneMap · Singapore Land Authority</div></div><div class="picker-sheet"><div class="route-card-label">Selected area</div><div id="picker-label" class="picker-place">${esc(picker.label)}</div><div class="picker-coords">${picker.center.lat.toFixed(5)}, ${picker.center.lng.toFixed(5)}</div><button class="route-primary" type="button" data-route-action="confirm-picker">Use this point</button><div class="picker-divider"><span>or type a place</span></div><div class="picker-manual-row"><input id="picker-manual-input" class="picker-manual-input" value="${esc(current)}" placeholder="Tampines MRT, postal code, Blk 123…" autocomplete="street-address" enterkeyhint="done"><button class="picker-manual-button" type="button" data-route-action="use-manual" ${current?'':'disabled'}>Use</button></div><div id="picker-manual-hint" class="picker-manual-hint">OneMap search will resolve the text to coordinates when API credentials are configured.</div></div></div>`
 }
-async function mountPicker(){
-  const container=document.getElementById('route-picker-map');if(!container||!pickerField)return;
-  const loading=document.getElementById('picker-loading');const existing=draft[`${pickerField}Point`];const center=existing||SG_CENTER;let map=null;
-  try{
-    const[mapboxgl,token]=await Promise.all([ensureMapbox(),getMapToken()]);
-    if(!document.getElementById('route-picker-map')||!pickerField)return;
-    mapboxgl.accessToken=token;
-    map=new mapboxgl.Map({container,style:'mapbox://styles/mapbox/light-v11',center:[center.lng,center.lat],zoom:existing?16:13.2,minZoom:10.5,maxZoom:18.2,maxBounds:[[103.55,1.15],[104.10,1.49]],maxPitch:0,pitch:0,bearing:0,dragRotate:false,touchPitch:false,attributionControl:true,logoPosition:'bottom-left'});
-    map.touchZoomRotate.disableRotation();map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'top-right');
-    await timeout(new Promise((resolve,reject)=>{map.once('load',resolve);map.once('error',event=>reject(event?.error||new Error('Unable to load map.')))}),6500,'Map loading timed out.');
-    let requestId=0;let destroyed=false;
-    const emitSelection=async()=>{const id=++requestId;const centerPoint=map.getCenter();let label='Selected area';try{label=await reverseGeocode(centerPoint.lng,centerPoint.lat)}catch{}if(destroyed||id!==requestId)return;pendingPoint={lng:centerPoint.lng,lat:centerPoint.lat,label};updatePickerText(pendingPoint)};
-    map.on('moveend',emitSelection);emitSelection();
-    pickerController={setCenter({lng,lat,zoom=16}){map.easeTo({center:[lng,lat],zoom,duration:300,easing:t=>1-Math.pow(1-t,3)})},destroy(){destroyed=true;requestId+=1;map.remove()}};
-    if(loading)loading.hidden=true;
-  }catch(error){try{map?.remove()}catch{}setMapFailure(error.message||'Type the location below instead.')}
+
+function journeyCard(){return`<section class="journey-card"><div class="journey-row"><span class="route-node origin"></span><div><div class="journey-label">From${route.originPoint?' · mapped':''}</div><div class="journey-place">${esc(route.origin)}</div></div></div><div class="journey-row"><span class="route-node destination"></span><div><div class="journey-label">To${route.destinationPoint?' · mapped':''}</div><div class="journey-place">${esc(route.destination)}</div></div></div></section>`}
+function routeCard(){
+ if(!route.originPoint||!route.destinationPoint)return`<section class="best-route-card"><div class="route-card-label">Best route</div><h2>Map both endpoints</h2><p>Edit the commute and choose exact points so Jalan can calculate a bus + MRT route.</p></section>`;
+ if(routeState.status==='loading')return`<section class="best-route-card"><div class="route-card-label">Best route</div><h2>Finding route…</h2><p>Checking OneMap public transport options.</p></section>`;
+ if(routeState.status==='error')return`<section class="best-route-card"><div class="route-card-label">Best route</div><h2>Routing unavailable</h2><p>${esc(routeState.error||'Could not load a route.')}</p><button class="route-link" data-route-action="retry-route">Retry</button></section>`;
+ const itinerary=routeState.data?.itinerary;
+ if(!itinerary)return`<section class="best-route-card"><div class="route-card-label">Best route</div><h2>Ready to route</h2><p>Route data will load automatically when OneMap routing credentials are available.</p></section>`;
+ const legs=(itinerary.legs||[]).map(leg=>`<div class="route-leg"><span class="leg-mode ${String(leg.mode||'').toLowerCase()}">${esc(leg.mode||'PT')}</span><div><strong>${esc(leg.label||leg.mode||'Travel')}</strong><span>${esc(leg.detail||'')}</span></div></div>`).join('');
+ return`<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">Best route now</div><h2>${fmtDuration(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers??0} transfer${itinerary.transfers===1?'':'s'}</div></div><div class="route-legs">${legs}</div></section>`
 }
-function openPicker(field){destroyPicker();pickerField=field;pendingPoint=draft[`${field}Point`]?{...draft[`${field}Point`],label:draft[field]}:null;render()}
-function closePicker(){destroyPicker();pickerField=null;pendingPoint=null;render()}
-function confirmPicker(){if(!pickerField||!pendingPoint)return;draft[pickerField]=pendingPoint.label;draft[`${pickerField}Point`]={lat:pendingPoint.lat,lng:pendingPoint.lng};closePicker()}
+function dashboardView(){return`<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journeyCard()}${routeCard()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Live timings</div><h2>Bus live · MRT next</h2></div><span class="live-state">LTA</span></div><p>Bus arrivals remain available now. MRT real-time data will plug into the calculated route separately.</p></section><div class="route-actions"><button class="route-primary" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`}
+
+function render(){shell.innerHTML=pickerField?pickerView():(route?dashboardView():setupView());bind();if(route&&!pickerField&&route.originPoint&&route.destinationPoint&&routeState.status==='idle')loadRouteData();if(pickerField)refreshPickerLabel()}
+function openPicker(field){pickerField=field;const point=draft[`${field}Point`];picker={center:point?{...point}:{...SG_CENTER},zoom:point?17:14,label:draft[field]||'Pinned location'};render()}
+function closePicker(){pickerField=null;render()}
+function confirmPicker(){draft[pickerField]=picker.label==='Singapore'?'Pinned location':picker.label;draft[`${pickerField}Point`]={...picker.center};closePicker()}
+
+async function refreshPickerLabel(){
+ const labelEl=document.getElementById('picker-label');
+ try{const r=await fetch(`/api/location?lat=${picker.center.lat}&lng=${picker.center.lng}`);const d=await r.json();if(r.ok&&d.label){picker.label=d.label;if(labelEl)labelEl.textContent=d.label}else if(labelEl)labelEl.textContent='Pinned location'}catch{if(labelEl)labelEl.textContent='Pinned location'}
+}
 async function useManual(){
-  if(!pickerField)return;
-  const input=shell.querySelector('#picker-manual-input');const button=shell.querySelector('[data-route-action="use-manual"]');const hint=shell.querySelector('#picker-manual-hint');const raw=String(input?.value||'').trim();if(!raw)return;
-  if(button){button.disabled=true;button.textContent='Finding…'}if(input)input.disabled=true;if(hint)hint.textContent='Finding the closest Singapore match…';
-  let result=null;try{result=await forwardGeocode(raw)}catch{}
-  if(!pickerField)return;
-  if(result){draft[pickerField]=result.label;draft[`${pickerField}Point`]={lat:result.lat,lng:result.lng}}else{draft[pickerField]=raw;draft[`${pickerField}Point`]=null}
-  closePicker();
+ const input=document.getElementById('picker-manual-input');const button=shell.querySelector('[data-route-action="use-manual"]');const hint=document.getElementById('picker-manual-hint');const q=String(input?.value||'').trim();if(!q)return;
+ if(button){button.disabled=true;button.textContent='Finding…'}if(hint)hint.textContent='Searching OneMap…';
+ try{const r=await fetch(`/api/location?q=${encodeURIComponent(q)}`);const d=await r.json();if(r.ok&&d.point){draft[pickerField]=d.label||q;draft[`${pickerField}Point`]=d.point}else{draft[pickerField]=q;draft[`${pickerField}Point`]=null}}catch{draft[pickerField]=q;draft[`${pickerField}Point`]=null}closePicker()
 }
 function useMyLocation(){
-  if(!navigator.geolocation)return setMapFailure('Location is not supported here. Type it below instead.');
-  const button=shell.querySelector('[data-route-action="my-location"]');if(button){button.disabled=true;button.textContent='Locating…'}
-  navigator.geolocation.getCurrentPosition(async pos=>{const point={lng:pos.coords.longitude,lat:pos.coords.latitude};if(pickerController){pickerController.setCenter({...point,zoom:16})}else{let label='My location';try{label=await reverseGeocode(point.lng,point.lat)}catch{}pendingPoint={...point,label};updatePickerText(pendingPoint)}if(button){button.disabled=false;button.textContent='◎ My location'}},()=>{if(button){button.disabled=false;button.textContent='Location unavailable'}},{enableHighAccuracy:true,timeout:7000,maximumAge:60000});
+ if(!navigator.geolocation)return;
+ const b=shell.querySelector('[data-route-action="my-location"]');if(b){b.disabled=true;b.textContent='Locating…'};
+ navigator.geolocation.getCurrentPosition(pos=>{picker.center={lat:pos.coords.latitude,lng:pos.coords.longitude};picker.zoom=17;picker.label='My location';render()},()=>{if(b){b.disabled=false;b.textContent='Location unavailable'}},{enableHighAccuracy:true,timeout:7000,maximumAge:60000})
 }
 
-function render(){destroyPicker();if(pickerField){shell.innerHTML=pickerView();bindActions();requestAnimationFrame(mountPicker);return}shell.innerHTML=route?dashboardView():setupView();bindActions()}
-function bindActions(){
-  shell.querySelectorAll('[data-route-pick]').forEach(button=>button.addEventListener('click',()=>openPicker(button.dataset.routePick)));
-  const manual=shell.querySelector('#picker-manual-input');const manualButton=shell.querySelector('[data-route-action="use-manual"]');
-  if(manual){const update=()=>{if(manualButton)manualButton.disabled=!manual.value.trim()};manual.addEventListener('input',update);manual.addEventListener('keydown',event=>{if(event.key==='Enter'&&manual.value.trim()){event.preventDefault();useManual()}})}
-  shell.querySelectorAll('[data-route-action]').forEach(button=>button.addEventListener('click',()=>{const action=button.dataset.routeAction;if(action==='bus')showLegacyBus();else if(action==='edit'){draft=makeDraft(route);route=null;render()}else if(action==='save-route'){if(!draft.origin||!draft.destination)return;saveRoute({id:'route-1',origin:draft.origin,destination:draft.destination,originPoint:draft.originPoint,destinationPoint:draft.destinationPoint,updatedAt:new Date().toISOString()});render()}else if(action==='clear'){localStorage.removeItem(ROUTE_KEY);route=null;draft=makeDraft(null);render()}else if(action==='cancel-picker')closePicker();else if(action==='confirm-picker')confirmPicker();else if(action==='use-manual')useManual();else if(action==='my-location')useMyLocation()}));
+function mercatorPx(lat,lng,zoom){const size=256*Math.pow(2,zoom);const x=(lng+180)/360*size;const sin=Math.sin(lat*Math.PI/180);const y=(.5-Math.log((1+sin)/(1-sin))/(4*Math.PI))*size;return{x,y,size}}
+function fromMercator(x,y,zoom){const size=256*Math.pow(2,zoom);const lng=x/size*360-180;const n=Math.PI-2*Math.PI*y/size;const lat=180/Math.PI*Math.atan(.5*(Math.exp(n)-Math.exp(-n)));return{lat:Math.max(1.15,Math.min(1.49,lat)),lng:Math.max(103.55,Math.min(104.1,lng))}}
+function shiftMap(dx,dy){const stage=document.getElementById('onemap-stage');if(!stage)return;const scale=512/stage.clientWidth;const p=mercatorPx(picker.center.lat,picker.center.lng,picker.zoom);picker.center=fromMercator(p.x-dx*scale,p.y-dy*scale,picker.zoom);picker.label='Pinned location';render()}
+
+function normalizeItinerary(raw){
+ const plan=raw?.plan||raw?.data?.plan;const it=plan?.itineraries?.[0];if(!it)return null;
+ const legs=(it.legs||[]).map(leg=>{const mode=String(leg.mode||'').toUpperCase();const from=leg.from?.name||'';const to=leg.to?.name||'';const routeName=leg.routeShortName||leg.route||leg.agencyName||'';let label=mode==='WALK'?`Walk ${fmtDistance(leg.distance)}`:(routeName?`${mode} ${routeName}`:mode);return{mode,label,detail:[from,to].filter(Boolean).join(' → ')}});
+ return{duration:Number(it.duration||0),transfers:Number(it.transfers||0),legs}
 }
-launcher.addEventListener('click',showShell);document.body.append(shell,launcher);render();
+async function loadRouteData(){
+ routeState={status:'loading',data:null,error:null};render();
+ const start=`${route.originPoint.lat},${route.originPoint.lng}`,end=`${route.destinationPoint.lat},${route.destinationPoint.lng}`;
+ try{const r=await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);const d=await r.json();if(!r.ok)throw new Error(d.error||'Routing unavailable.');const itinerary=normalizeItinerary(d);if(!itinerary)throw new Error('OneMap returned no public-transport itinerary.');routeState={status:'ready',data:{itinerary},error:null}}catch(e){routeState={status:'error',data:null,error:e.message}}render()
+}
+
+function bind(){
+ shell.querySelectorAll('[data-route-pick]').forEach(b=>b.addEventListener('click',()=>openPicker(b.dataset.routePick)));
+ const manual=document.getElementById('picker-manual-input'),manualBtn=shell.querySelector('[data-route-action="use-manual"]');if(manual){manual.addEventListener('input',()=>{if(manualBtn)manualBtn.disabled=!manual.value.trim()});manual.addEventListener('keydown',e=>{if(e.key==='Enter'&&manual.value.trim()){e.preventDefault();useManual()}})}
+ shell.querySelectorAll('[data-route-action]').forEach(b=>b.addEventListener('click',()=>{const a=b.dataset.routeAction;if(a==='bus'){shell.hidden=true;launcher.hidden=false}else if(a==='edit'){draft=makeDraft(route);route=null;routeState={status:'idle',data:null,error:null};render()}else if(a==='save-route'){if(!draft.origin||!draft.destination)return;saveRoute({id:'route-1',...draft,updatedAt:new Date().toISOString()});routeState={status:'idle',data:null,error:null};render()}else if(a==='clear'){localStorage.removeItem(ROUTE_KEY);route=null;draft=makeDraft(null);routeState={status:'idle',data:null,error:null};render()}else if(a==='cancel-picker')closePicker();else if(a==='confirm-picker')confirmPicker();else if(a==='use-manual')useManual();else if(a==='my-location')useMyLocation();else if(a==='zoom-in'){picker.zoom=Math.min(19,picker.zoom+1);render()}else if(a==='zoom-out'){picker.zoom=Math.max(11,picker.zoom-1);render()}else if(a==='retry-route'){routeState={status:'idle',data:null,error:null};render()}}));
+ const stage=document.getElementById('onemap-stage'),img=document.getElementById('onemap-image');if(stage&&img){stage.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;drag={x:e.clientX,y:e.clientY};stage.setPointerCapture(e.pointerId)});stage.addEventListener('pointermove',e=>{if(!drag)return;img.style.transform=`translate(${e.clientX-drag.x}px,${e.clientY-drag.y}px)`});stage.addEventListener('pointerup',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag=null;img.style.transform='';if(Math.abs(dx)+Math.abs(dy)>4)shiftMap(dx,dy)});stage.addEventListener('pointercancel',()=>{drag=null;img.style.transform=''})}
+}
+launcher.addEventListener('click',()=>{shell.hidden=false;launcher.hidden=true;render()});document.body.append(shell,launcher);render();
 })();
