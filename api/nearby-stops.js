@@ -1,6 +1,6 @@
 const LTA_URL = 'https://datamall2.mytransport.sg/ltaodataservice/BusStops';
 const PAGE_SIZE = 500;
-const MAX_PAGES = 14;
+const MAX_PAGES = 20;
 const CACHE_MS = 6 * 60 * 60 * 1000;
 
 let cachedStops = null;
@@ -18,19 +18,21 @@ function distanceMetres(lat1, lon1, lat2, lon2) {
 async function loadStops(apiKey) {
   if (cachedStops && Date.now() - cachedAt < CACHE_MS) return cachedStops;
 
-  const offsets = Array.from({ length: MAX_PAGES }, (_, index) => index * PAGE_SIZE);
-  const pages = await Promise.all(offsets.map(async (skip) => {
+  const all = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
     const url = new URL(LTA_URL);
-    url.searchParams.set('$skip', String(skip));
+    url.searchParams.set('$skip', String(page * PAGE_SIZE));
     const response = await fetch(url, {
       headers: { AccountKey: apiKey, Accept: 'application/json' },
     });
     if (!response.ok) throw new Error(`LTA BusStops request failed (${response.status}).`);
     const payload = await response.json();
-    return payload.value || [];
-  }));
+    const rows = payload.value || [];
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
 
-  cachedStops = pages.flat().filter((stop) => stop.BusStopCode && stop.Latitude && stop.Longitude);
+  cachedStops = all.filter((stop) => stop.BusStopCode && stop.Latitude && stop.Longitude);
   cachedAt = Date.now();
   return cachedStops;
 }
