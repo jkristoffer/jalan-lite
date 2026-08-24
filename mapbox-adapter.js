@@ -24,7 +24,7 @@
       this.options=options;
       this.map=null;
       this.center=[103.8198,1.3521];
-      this.zoom=16;
+      this.zoom=16.6;
       this.queue=[];
       this.destroyed=false;
       this.ready=this.init();
@@ -42,6 +42,11 @@
           zoom:this.zoom,
           minZoom:this.options.minZoom||11,
           maxZoom:this.options.maxZoom||19,
+          maxPitch:0,
+          pitch:0,
+          bearing:0,
+          dragRotate:false,
+          touchPitch:false,
           maxBounds:toBounds(this.options.maxBounds),
           attributionControl:true,
           logoPosition:'bottom-left',
@@ -58,6 +63,7 @@
             }
           }
         });
+        this.map.touchZoomRotate.disableRotation();
         this.map.once('load',()=>{
           if(this.destroyed)return;
           this.queue.splice(0).forEach(fn=>fn());
@@ -77,7 +83,7 @@
 
     setView(latLng,zoom){
       this.center=[latLng[1],latLng[0]];
-      this.zoom=zoom;
+      this.zoom=Math.min(17.25,Math.max(16.55,Number(zoom)||16.7));
       if(this.map)this.map.jumpTo({center:this.center,zoom:this.zoom});
       return this;
     }
@@ -85,7 +91,7 @@
     panTo(latLng){
       const center=[latLng[1],latLng[0]];
       this.center=center;
-      this.whenReady(()=>this.map.easeTo({center,duration:250}));
+      this.whenReady(()=>this.map.easeTo({center,zoom:17.05,duration:320,easing:t=>1-Math.pow(1-t,3)}));
       return this;
     }
 
