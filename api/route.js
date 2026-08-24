@@ -11,6 +11,7 @@ function addDay(date){
   return`${String(next.getUTCMonth()+1).padStart(2,'0')}-${String(next.getUTCDate()).padStart(2,'0')}-${next.getUTCFullYear()}`;
 }
 function validCoord(value){return /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(value)}
+function validTime(value){return /^([01]\d|2[0-3]):[0-5]\d$/.test(value)}
 function isNoRoute(response,data){return response.status===404||/no .*route found/i.test(String(data?.error||data?.message||''))}
 async function requestRoute({token,start,end,date,time,numItineraries='3',maxWalkDistance='2000'}){
   const url=new URL('https://www.onemap.gov.sg/api/public/routingsvc/route');
@@ -32,17 +33,21 @@ module.exports=async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
   try{
     const start=String(req.query?.start||''),end=String(req.query?.end||'');
+    const requestedTime=String(req.query?.time||'').trim();
     if(!validCoord(start)||!validCoord(end))return res.status(400).json({error:'Valid start and end coordinates are required.'});
+    if(requestedTime&&!validTime(requestedTime))return res.status(400).json({error:'Time must use HH:MM format.'});
 
     const token=await getOneMapToken();
     const now=sgDateTime();
-    const current=await requestRoute({token,start,end,date:now.date,time:now.time});
+    const planned=Boolean(requestedTime);
+    const queryTime=planned?`${requestedTime}:00`:now.time;
+    const current=await requestRoute({token,start,end,date:now.date,time:queryTime});
     if(current.response.ok&&!current.data.error){
-      current.data._jalan={service:'now',requestedDate:now.date,requestedTime:now.time};
+      current.data._jalan={service:planned?'planned':'now',requestedDate:now.date,requestedTime:queryTime};
       return res.status(200).json(current.data);
     }
 
-    if(isNoRoute(current.response,current.data)){
+    if(!planned&&isNoRoute(current.response,current.data)){
       const nextDate=now.hour<5?now.date:addDay(now.date);
       const nextTime='05:30:00';
       const next=await requestRoute({token,start,end,date:nextDate,time:nextTime});
@@ -51,6 +56,10 @@ module.exports=async function handler(req,res){
         return res.status(200).json(next.data);
       }
       return res.status(current.response.status||404).json({error:current.data.error||'No public transport route is available now.',nextServiceError:next.data.error||null});
+    }
+
+    if(planned&&isNoRoute(current.response,current.data)){
+      return res.status(404).json({error:`No public transport route was found for ${requestedTime}.`});
     }
 
     return res.status(current.response.status||502).json({error:current.data.error||current.data.message||'OneMap routing failed.',details:current.data});
