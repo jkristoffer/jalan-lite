@@ -1,5 +1,5 @@
 export default function handler(req,res){
-  res.setHeader('Cache-Control','s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control','public, s-maxage=86400, stale-while-revalidate=604800');
   const token=process.env.MAPBOX_PUBLIC_TOKEN||process.env.MAPBOX_TOKEN||'';
   if(!token){
     return res.status(503).json({error:'MAPBOX_PUBLIC_TOKEN is not configured.'});
