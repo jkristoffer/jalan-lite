@@ -99,6 +99,8 @@ function fieldsOf(bytes) {
     } else if (wire === 5) {
       fields.push({ number, wire, value: bytes.slice(offset, offset + 4) });
       offset += 4;
+    } else if (wire === 4) {
+      break;
     } else {
       throw new Error(`Unsupported protobuf wire type ${wire}.`);
     }
