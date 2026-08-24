@@ -4,6 +4,7 @@
   const LIVE_REFRESH_INTERVAL = 45000;
   const shell = document.createElement('section');
   const launcher = document.createElement('button');
+  const disruptionTools = window.JalanDisruptions;
 
   let saved = load();
   let draftState = draft(saved);
@@ -558,28 +559,11 @@
   }
 
   function trainAlertMatches(leg, alert) {
-    const selectors = alert?.selectors || [];
-    if (!selectors.length) return true;
-    const routeKey = trainLineKey(leg.routeName || leg.lineName);
-    return selectors.some((selector) => {
-      const routeMatch = selector.routeId && routeKey && trainLineKey(selector.routeId) === routeKey;
-      const stopMatch = selector.stopId && (sameStop(selector.stopId, leg.fromId) || sameStop(selector.stopId, leg.toId));
-      return routeMatch || stopMatch;
-    });
+    return disruptionTools.alertMatchesLeg(leg, alert);
   }
 
   function relevantTrainAlerts(itinerary, payload) {
-    const legs = (itinerary?.legs || []).filter((leg) => leg.mode === 'SUBWAY');
-    const seen = new Set();
-    return (payload?.alerts || [])
-      .filter((alert) => legs.some((leg) => trainAlertMatches(leg, alert)))
-      .filter((alert) => {
-        const key = alert.id || alert.header || alert.description;
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .slice(0, 3);
+    return disruptionTools.relevantAlerts(itinerary, payload);
   }
 
   function trainMatch(leg, payload) {
@@ -652,13 +636,29 @@
     const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(saved.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
     try {
       const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`); const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Routing unavailable.'); const itinerary = normalizeRoute(data); if (!itinerary) throw new Error('No public-transport itinerary.');
-      routeState = { status: 'ready', data: itinerary, error: '' }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) { const degraded = liveHasError(itinerary); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
+      if (!response.ok) throw new Error(data.error || 'Routing unavailable.');
+      const routed = normalizeRoute(data);
+      if (!routed) throw new Error('No public-transport itinerary.');
+      let itinerary = routed;
+      let notice = '';
+      if (preserveCurrent && previous) {
+        const candidate = disruptionTools.bestUnblocked(routed, previous.liveAlerts || []);
+        if (!candidate) {
+          liveUpdatedAt = previousUpdatedAt;
+          liveRefreshStatus = previousRefreshStatus;
+          routeState = { status: 'ready', data: previous, error: '', notice: 'No unaffected alternative was returned. Your current route is still shown.' };
+          render();
+          return;
+        }
+        itinerary = { ...candidate, alternatives: routed.alternatives, choiceLabel: 'Rerouted' };
+        notice = `Rerouted via ${disruptionTools.serviceLabel(itinerary)} to avoid the affected service.`;
+      }
+      routeState = { status: 'ready', data: itinerary, error: '', notice }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) { const degraded = liveHasError(itinerary); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
     } catch (error) {
       if (previous) {
         liveUpdatedAt = previousUpdatedAt;
         liveRefreshStatus = previousRefreshStatus;
-        routeState = { status: 'ready', data: previous, error: '', notice: `Could not find a better route: ${error.message || 'routing is unavailable.'} Your current route is still shown.` };
+        routeState = { status: 'ready', data: previous, error: '', notice: `Could not recalculate around the disruption: ${error.message || 'routing is unavailable.'} Your current route is still shown.` };
       } else {
         routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' };
       }
