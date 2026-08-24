@@ -13,6 +13,7 @@ A lightweight Singapore bus-arrival app based on the Claude Design prototype.
 - Uses LTA GTFS-Realtime train trip updates and service alerts for MRT legs when the feed has a matching line or station.
 - Supports both Leave at and Arrive by commute planning through OneMap transit routing.
 - Lets users tap a journey leg to focus its geometry and boarding/alighting points on the map.
+- Refreshes live bus and train timings every 45 seconds while the commute screen is active.
 
 ## Vercel setup
 

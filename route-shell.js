@@ -1,6 +1,7 @@
 (() => {
   const STORAGE_KEY = 'jalan-lite-routes-v1';
   const DEFAULT_CENTER = { lat: 1.3521, lng: 103.8198 };
+  const LIVE_REFRESH_INTERVAL = 45000;
   const shell = document.createElement('section');
   const launcher = document.createElement('button');
 
@@ -12,6 +13,10 @@
   let map = null;
   let viewing = false;
   let selectedLegIndex = null;
+  let liveRefreshTimer = null;
+  let liveRefreshInFlight = false;
+  let liveUpdatedAt = 0;
+  let liveRefreshStatus = 'idle';
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -229,9 +234,82 @@
     const hasBus = itinerary?.legs.some((leg) => leg.mode === 'BUS');
     const hasMrt = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY');
     const trainLive = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY' && leg.trainStatus === 'ready');
-    const sourceCopy = `${hasBus ? 'Bus legs show LTA real-time arrivals. ' : ''}${hasMrt ? (trainLive ? 'MRT legs use LTA GTFS-Realtime trip updates when available.' : 'MRT legs use OneMap schedule timings with a live-feed fallback.') : ''}`;
+    const sourceCopy = `${hasBus ? 'Bus legs show LTA real-time arrivals. ' : ''}${hasMrt ? (trainLive ? 'MRT legs use LTA GTFS-Realtime trip updates when available.' : 'MRT legs use OneMap schedule timings with a live-feed fallback.') : ''}${hasBus || hasMrt ? ' Live timings refresh every 45 seconds while this screen is open.' : ''}`;
     const sourceHeading = `Bus ${hasBus ? 'live' : '—'} · MRT ${hasMrt ? (trainLive ? 'live' : 'scheduled') : '—'}`;
-    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing sources</div><h2>${sourceHeading}</h2></div><span class="live-state">LTA</span></div><p>${escapeHtml(sourceCopy || 'Live timing appears with the calculated route.')}</p></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Refresh route + timings</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing sources</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state">LTA</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(sourceCopy || 'Live timing appears with the calculated route.')}</p></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Refresh route + timings</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+  }
+
+  function hasLiveTiming(itinerary) {
+    return Boolean(itinerary?.legs?.some((leg) => leg.mode === 'BUS' || leg.mode === 'SUBWAY'));
+  }
+
+  function liveHasError(itinerary) {
+    return Boolean(itinerary?.legs?.some((leg) => (leg.mode === 'BUS' && leg.liveStatus === 'error') || (leg.mode === 'SUBWAY' && leg.trainStatus === 'error')));
+  }
+
+  function liveFreshness() {
+    if (liveRefreshStatus === 'loading') return 'Updating…';
+    if (liveRefreshStatus === 'degraded' && !liveUpdatedAt) return 'LTA unavailable';
+    if (!liveUpdatedAt) return 'Checking…';
+    const age = Math.max(0, Math.floor((Date.now() - liveUpdatedAt) / 1000));
+    const ageLabel = age < 60 ? 'just now' : `${Math.floor(age / 60)} min ago`;
+    return liveRefreshStatus === 'degraded' ? `Stale · ${ageLabel}` : `Updated ${ageLabel}`;
+  }
+
+  function updateLiveFreshnessDom() {
+    const node = document.getElementById('live-freshness');
+    if (node) node.textContent = liveFreshness();
+  }
+
+  function canRefreshLive() {
+    return Boolean(saved && routeState.status === 'ready' && routeState.data && hasLiveTiming(routeState.data) && !pickerField && !viewing && !document.hidden && !shell.hidden);
+  }
+
+  function stopLiveRefresh() {
+    if (liveRefreshTimer) window.clearTimeout(liveRefreshTimer);
+    liveRefreshTimer = null;
+  }
+
+  function syncLiveRefresh() {
+    if (!canRefreshLive()) {
+      stopLiveRefresh();
+      return;
+    }
+    if (!liveRefreshTimer) {
+      liveRefreshTimer = window.setTimeout(() => {
+        liveRefreshTimer = null;
+        refreshLiveTimings();
+      }, LIVE_REFRESH_INTERVAL);
+    }
+  }
+
+  async function refreshLiveTimings() {
+    if (!canRefreshLive() || liveRefreshInFlight) {
+      syncLiveRefresh();
+      return;
+    }
+    const itinerary = routeState.data;
+    liveRefreshInFlight = true;
+    liveRefreshStatus = 'loading';
+    updateLiveFreshnessDom();
+    try {
+      await Promise.all([liveBus(itinerary), liveTrain(itinerary)]);
+      if (routeState.data === itinerary) {
+        const degraded = liveHasError(itinerary);
+        if (!degraded) liveUpdatedAt = Date.now();
+        liveRefreshStatus = degraded ? 'degraded' : 'ready';
+        updateLiveFreshnessDom();
+        if (canRefreshLive()) render();
+      }
+    } catch {
+      if (routeState.data === itinerary) {
+        liveRefreshStatus = 'degraded';
+        updateLiveFreshnessDom();
+      }
+    } finally {
+      liveRefreshInFlight = false;
+      syncLiveRefresh();
+    }
   }
 
   function viewer() {
@@ -255,6 +333,7 @@
     if (pickerField) requestAnimationFrame(renderPickerMap);
     if (viewing) requestAnimationFrame(renderViewerMap);
     if (saved && !pickerField && !viewing && saved.originPoint && saved.destinationPoint && routeState.status === 'idle') routeData();
+    syncLiveRefresh();
   }
 
   function openPicker(field) {
@@ -513,21 +592,25 @@
     const choice = alternativeOptions(current).find((option) => option.key === key);
     if (!choice || itinerarySignature(choice.itinerary) === itinerarySignature(current)) return;
     selectedLegIndex = null;
+    liveUpdatedAt = 0;
+    liveRefreshStatus = 'loading';
     const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
     routeState = { status: 'ready', data: selected, error: '' };
     render();
     await Promise.all([liveBus(selected), liveTrain(selected)]);
-    if (routeState.data === selected) render();
+    if (routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
   }
 
   async function routeData() {
     selectedLegIndex = null;
+    liveUpdatedAt = 0;
+    liveRefreshStatus = 'loading';
     routeState = { status: 'loading', data: null, error: '' }; render();
     const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(saved.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
     try {
       const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`); const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Routing unavailable.'); const itinerary = normalizeRoute(data); if (!itinerary) throw new Error('No public-transport itinerary.');
-      routeState = { status: 'ready', data: itinerary, error: '' }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) render();
+      routeState = { status: 'ready', data: itinerary, error: '' }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) { const degraded = liveHasError(itinerary); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
     } catch (error) { routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' }; render(); }
   }
 
@@ -539,10 +622,10 @@
     shell.querySelectorAll('[data-route-action]').forEach((button) => {
       button.onclick = () => {
         const action = button.dataset.routeAction;
-        if (action === 'bus') { destroyMap(); shell.hidden = true; launcher.hidden = false; }
+        if (action === 'bus') { stopLiveRefresh(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
         else if (action === 'edit') { draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); routeState = { status: 'idle', data: null, error: '' }; render(); } }
-        else if (action === 'clear') { localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'clear') { stopLiveRefresh(); localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
         else if (action === 'cancel') closePicker();
         else if (action === 'confirm') { draftState[pickerField] = mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label; draftState[`${pickerField}Point`] = { ...mapPosition.center }; closePicker(); }
         else if (action === 'manual') manualLocation();
@@ -552,10 +635,19 @@
         else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; viewing = true; render(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
         else if (action === 'viewer' && routeState.data) { selectedLegIndex = null; viewing = true; render(); }
-        else if (action === 'close-viewer') { viewing = false; selectedLegIndex = null; render(); }
+        else if (action === 'close-viewer') { viewing = false; selectedLegIndex = null; render(); refreshLiveTimings(); }
       };
     });
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopLiveRefresh();
+      return;
+    }
+    refreshLiveTimings();
+    syncLiveRefresh();
+  });
 
   launcher.onclick = () => { shell.hidden = false; launcher.hidden = true; render(); };
   document.body.append(shell, launcher);
