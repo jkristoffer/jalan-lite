@@ -13,148 +13,95 @@
     return tokenPromise;
   }
 
-  function toBounds(bounds){
-    if(!bounds||!bounds.sw||!bounds.ne)return undefined;
-    return [[bounds.sw.lng,bounds.sw.lat],[bounds.ne.lng,bounds.ne.lat]];
+  function markerElement(stop,selected,onSelect){
+    const button=document.createElement('button');
+    button.type='button';
+    button.className=`stop-marker${selected?' selected':''}`;
+    button.dataset.stopCode=stop.stopCode;
+    button.textContent=stop.stopCode;
+    button.setAttribute('aria-label',`${stop.name}, bus stop ${stop.stopCode}`);
+    button.addEventListener('click',()=>onSelect(stop.stopCode));
+    return button;
   }
 
-  class MapWrapper{
-    constructor(container,options={}){
-      this.container=typeof container==='string'?document.getElementById(container):container;
-      this.options=options;
-      this.map=null;
-      this.center=[103.8198,1.3521];
-      this.zoom=16.6;
-      this.queue=[];
-      this.destroyed=false;
-      this.ready=this.init();
-    }
+  async function create({container,center,stops,selectedStopCode,onSelect}){
+    if(typeof mapboxgl==='undefined')throw new Error('Mapbox failed to load.');
+    const token=await getToken();
+    mapboxgl.accessToken=token;
 
-    async init(){
-      try{
-        const token=await getToken();
-        if(this.destroyed)return;
-        mapboxgl.accessToken=token;
-        this.map=new mapboxgl.Map({
-          container:this.container,
-          style:'mapbox://styles/mapbox/standard',
-          center:this.center,
-          zoom:this.zoom,
-          minZoom:this.options.minZoom||11,
-          maxZoom:this.options.maxZoom||19,
-          maxPitch:0,
-          pitch:0,
-          bearing:0,
-          dragRotate:false,
-          touchPitch:false,
-          maxBounds:toBounds(this.options.maxBounds),
-          attributionControl:true,
-          logoPosition:'bottom-left',
-          config:{
-            basemap:{
-              theme:'monochrome',
-              lightPreset:'day',
-              showPointOfInterestLabels:false,
-              showTransitLabels:false,
-              show3dObjects:false,
-              showPlaceLabels:true,
-              showRoadLabels:true,
-              font:'Barlow'
-            }
-          }
-        });
-        this.map.touchZoomRotate.disableRotation();
-        this.map.once('load',()=>{
-          if(this.destroyed)return;
-          this.queue.splice(0).forEach(fn=>fn());
-        });
-      }catch(error){
-        if(this.container&&!this.destroyed){
-          this.container.innerHTML=`<div class="map-loading">${error.message||'Unable to load Mapbox.'}</div>`;
+    const map=new mapboxgl.Map({
+      container,
+      style:'mapbox://styles/mapbox/standard',
+      center:[center.lng,center.lat],
+      zoom:16.8,
+      minZoom:15.2,
+      maxZoom:18.2,
+      maxPitch:0,
+      pitch:0,
+      bearing:0,
+      dragRotate:false,
+      touchPitch:false,
+      attributionControl:true,
+      logoPosition:'bottom-left',
+      config:{
+        basemap:{
+          theme:'monochrome',
+          lightPreset:'day',
+          showPointOfInterestLabels:false,
+          showTransitLabels:false,
+          show3dObjects:false,
+          showPlaceLabels:true,
+          showRoadLabels:true,
+          font:'Barlow'
         }
       }
+    });
+    map.touchZoomRotate.disableRotation();
+
+    await new Promise((resolve,reject)=>{
+      map.once('load',resolve);
+      map.once('error',event=>reject(event?.error||new Error('Unable to load map.')));
+    });
+
+    const locationEl=document.createElement('div');
+    locationEl.className='location-dot';
+    locationEl.setAttribute('aria-hidden','true');
+    new mapboxgl.Marker({element:locationEl,anchor:'center'})
+      .setLngLat([center.lng,center.lat])
+      .addTo(map);
+
+    const markerEls=new Map();
+    const markers=[];
+    stops.forEach(stop=>{
+      const el=markerElement(stop,stop.stopCode===selectedStopCode,onSelect);
+      markerEls.set(stop.stopCode,el);
+      markers.push(new mapboxgl.Marker({element:el,anchor:'center'})
+        .setLngLat([stop.lng,stop.lat])
+        .addTo(map));
+    });
+
+    function selectStop(stop){
+      markerEls.forEach((el,code)=>el.classList.toggle('selected',code===stop.stopCode));
+      map.easeTo({
+        center:[stop.lng,stop.lat],
+        zoom:17.05,
+        offset:[0,-34],
+        duration:260,
+        easing:t=>1-Math.pow(1-t,3)
+      });
     }
 
-    whenReady(fn){
-      if(this.destroyed)return;
-      if(this.map&&this.map.loaded())fn();
-      else this.queue.push(fn);
-    }
+    const initial=stops.find(stop=>stop.stopCode===selectedStopCode);
+    if(initial)selectStop(initial);
 
-    setView(latLng,zoom){
-      this.center=[latLng[1],latLng[0]];
-      this.zoom=Math.min(17.25,Math.max(16.55,Number(zoom)||16.7));
-      if(this.map)this.map.jumpTo({center:this.center,zoom:this.zoom});
-      return this;
-    }
-
-    panTo(latLng){
-      const center=[latLng[1],latLng[0]];
-      this.center=center;
-      this.whenReady(()=>this.map.easeTo({center,zoom:17.05,duration:320,easing:t=>1-Math.pow(1-t,3)}));
-      return this;
-    }
-
-    addMarker(marker){
-      this.whenReady(()=>marker.mount(this.map));
-      return this;
-    }
-
-    remove(){
-      this.destroyed=true;
-      this.queue=[];
-      if(this.map){
-        this.map.remove();
-        this.map=null;
+    return {
+      selectStop,
+      destroy(){
+        markers.forEach(marker=>marker.remove());
+        map.remove();
       }
-      if(this.container)this.container.innerHTML='';
-    }
+    };
   }
 
-  class MarkerWrapper{
-    constructor(latLng,options={}){
-      this.latLng=latLng;
-      this.options=options;
-      this.mapboxMarker=null;
-      this.clickHandlers=[];
-    }
-
-    makeElement(){
-      const icon=this.options.icon||{};
-      const wrapper=document.createElement('div');
-      wrapper.className=(icon.className||'').replace('leaflet-div-icon','').trim();
-      wrapper.innerHTML=icon.html||'';
-      const element=wrapper.firstElementChild||wrapper;
-      if(this.options.interactive===false)element.style.pointerEvents='none';
-      this.clickHandlers.forEach(handler=>element.addEventListener('click',handler));
-      return element;
-    }
-
-    mount(map){
-      if(this.mapboxMarker)return;
-      const element=this.makeElement();
-      this.mapboxMarker=new mapboxgl.Marker({element,anchor:'center'})
-        .setLngLat([this.latLng[1],this.latLng[0]])
-        .addTo(map);
-    }
-
-    addTo(mapWrapper){
-      mapWrapper.addMarker(this);
-      return this;
-    }
-
-    on(event,handler){
-      if(event==='click')this.clickHandlers.push(handler);
-      return this;
-    }
-  }
-
-  window.L={
-    latLng:(lat,lng)=>({lat,lng}),
-    latLngBounds:(sw,ne)=>({sw,ne}),
-    map:(container,options)=>new MapWrapper(container,options),
-    tileLayer:()=>({addTo:()=>({})}),
-    divIcon:options=>options,
-    marker:(latLng,options)=>new MarkerWrapper(latLng,options)
-  };
+  window.JalanMap={create};
 })();
