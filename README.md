@@ -17,6 +17,7 @@ A lightweight Singapore bus-arrival app based on the Claude Design prototype.
 - Surfaces matching LTA train service alerts and can recalculate a replacement route while preserving the current route if routing fails.
 - Chooses reroute alternatives that avoid the affected MRT line or station when OneMap returns one.
 - Includes a clearly labelled mock disruption flow for demos and QA without changing live route data.
+- Shows per-leg live, scheduled, or fallback confidence with LTA/OneMap sources and refresh age.
 
 ## Vercel setup
 

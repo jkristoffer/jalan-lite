@@ -5,6 +5,7 @@
   const shell = document.createElement('section');
   const launcher = document.createElement('button');
   const disruptionTools = window.JalanDisruptions;
+  const liveTools = window.JalanLiveStatus;
 
   let saved = load();
   let draftState = draft(saved);
@@ -140,6 +141,8 @@
       if (arrivals.length) return `<div class="leg-live"><span class="live-dot"></span>${arrivals.map((value) => `<b>${value === 0 ? 'Arr' : `${value} min`}</b>`).join('')}<em>live</em></div>`;
     }
     if (leg.mode === 'BUS' && leg.liveStatus === 'loading') return '<div class="leg-live muted">Checking live arrivals…</div>';
+    if (leg.mode === 'BUS' && leg.liveStatus === 'error') return '<div class="leg-live scheduled"><b>Schedule fallback</b><em>LTA unavailable</em></div>';
+    if (leg.mode === 'BUS' && leg.liveStatus === 'ready') return '<div class="leg-live scheduled"><b>No live arrival</b><em>LTA</em></div>';
     if (leg.mode === 'SUBWAY' && leg.trainStatus === 'loading') return '<div class="leg-live muted">Checking LTA train updates…</div>';
     if (leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText) return `<div class="leg-live alert"><span class="live-dot"></span><b>${escapeHtml(leg.trainRealtime.alertText)}</b><em>LTA alert</em></div>`;
     if (leg.mode === 'SUBWAY' && leg.trainRealtime && (leg.trainRealtime.departureTime || leg.trainRealtime.arrivalTime)) {
@@ -148,10 +151,21 @@
       const delay = leg.trainRealtime.delay ? ` · ${Math.round(leg.trainRealtime.delay / 60)} min delay` : '';
       return `<div class="leg-live train"><span class="live-dot"></span><b>${departure} → ${arrival}</b><em>live${delay}</em></div>`;
     }
-    if (leg.mode === 'SUBWAY' && leg.trainStatus === 'ready') return '<div class="leg-live train"><span class="live-dot"></span><b>Realtime feed connected</b><em>LTA</em></div>';
+    if (leg.mode === 'SUBWAY' && leg.trainStatus === 'ready') return '<div class="leg-live scheduled"><b>Scheduled timing</b><em>OneMap</em></div>';
     if (leg.mode === 'SUBWAY' && leg.trainStatus === 'error') return '<div class="leg-live scheduled"><b>Schedule fallback</b><em>LTA unavailable</em></div>';
     if (leg.mode === 'SUBWAY' && leg.departureTime) return `<div class="leg-live scheduled"><b>${timeAt(leg.departureTime)}</b><em>scheduled</em></div>`;
     return '';
+  }
+
+  function legConfidence(leg) {
+    return liveTools.statusForLeg(leg);
+  }
+
+  function confidenceMarkup(leg) {
+    const status = legConfidence(leg);
+    const age = liveTools.ageLabel(status.updatedAt);
+    const detail = `${status.source}${age ? ` · ${age}` : ''}`;
+    return `<div class="timeline-confidence ${escapeHtml(status.tone)}"><span class="timeline-confidence-label">${escapeHtml(status.label)}</span><span>${escapeHtml(detail)}</span></div>`;
   }
 
   function transferPoint(previous, current) {
@@ -186,7 +200,7 @@
   function timeline(itinerary) {
     const legs = itinerary?.legs || [];
     if (!legs.length) return '<div class="timeline-empty">No step-by-step details returned.</div>';
-    return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<button type="button" class="timeline-item${selectedLegIndex === index ? ' selected' : ''}${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? ' affected' : ''}" data-route-action="leg" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div>${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? '<div class="timeline-alert-label">LTA service alert</div>' : ''}<div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></button>`).join('')}</div>`;
+    return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<button type="button" class="timeline-item${selectedLegIndex === index ? ' selected' : ''}${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? ' affected' : ''}" data-route-action="leg" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div>${confidenceMarkup(leg)}${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? '<div class="timeline-alert-label">LTA service alert</div>' : ''}<div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></button>`).join('')}</div>`;
   }
 
   function itinerarySignature(itinerary) {
@@ -246,14 +260,22 @@
     return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
   }
 
+  function modeStatusLabel(status) {
+    return ({ live: 'live', partial: 'partly live', alert: 'alert', checking: 'checking', fallback: 'fallback', scheduled: 'scheduled' })[status] || '—';
+  }
+
   function dashboard() {
     const itinerary = routeState.data;
     const hasBus = itinerary?.legs.some((leg) => leg.mode === 'BUS');
     const hasMrt = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY');
-    const trainLive = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY' && leg.trainStatus === 'ready');
-    const sourceCopy = `${hasBus ? 'Bus legs show LTA real-time arrivals. ' : ''}${hasMrt ? (trainLive ? 'MRT legs use LTA GTFS-Realtime trip updates when available.' : 'MRT legs use OneMap schedule timings with a live-feed fallback.') : ''}${hasBus || hasMrt ? ' Live timings refresh every 45 seconds while this screen is open.' : ''}`;
-    const sourceHeading = `Bus ${hasBus ? 'live' : '—'} · MRT ${hasMrt ? (trainLive ? 'live' : 'scheduled') : '—'}`;
-    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing sources</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state">LTA</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(sourceCopy || 'Live timing appears with the calculated route.')}</p><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Refresh route + timings</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+    const summary = itinerary ? liveTools.summary(itinerary) : { tone: 'neutral', label: 'Checking route', detail: '' };
+    const busStatus = hasBus ? liveTools.modeStatus(itinerary, 'BUS') : null;
+    const mrtStatus = hasMrt ? liveTools.modeStatus(itinerary, 'SUBWAY') : null;
+    const sourceCopy = `${hasBus ? (busStatus === 'live' ? 'Bus legs use LTA real-time arrivals.' : 'Bus legs use LTA arrivals when available, with OneMap timings as fallback.') : ''}${hasMrt ? (mrtStatus === 'live' ? ' MRT legs use LTA GTFS-Realtime trip updates.' : ' MRT legs use OneMap schedule timings when live train data is unavailable.') : ''}${hasBus || hasMrt ? ' Live feeds refresh every 45 seconds while this screen is open.' : ' This route only needs OneMap route data.'}`;
+    const sourceHeading = `Bus ${hasBus ? modeStatusLabel(busStatus) : '—'} · MRT ${hasMrt ? modeStatusLabel(mrtStatus) : '—'}`;
+    const refreshDisabled = liveRefreshInFlight || liveRefreshStatus === 'loading' || !hasLiveTiming(itinerary);
+    const refreshLabel = liveRefreshInFlight || liveRefreshStatus === 'loading' ? 'Updating…' : 'Refresh live data';
+    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Ready when you are.</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing confidence</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state live-state-${escapeHtml(summary.tone)}">${escapeHtml(summary.label)}</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class="timing-controls"><span class="timing-control-note">${escapeHtml(liveFreshness())}</span><button type="button" class="timing-refresh" data-route-action="refresh-live" ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section><div class="route-actions"><button class="route-primary" data-route-action="refresh">Recalculate route</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
   }
 
   function demoTimeline(rerouted) {
@@ -286,7 +308,7 @@
   }
 
   function hasLiveTiming(itinerary) {
-    return Boolean(itinerary?.legs?.some((leg) => leg.mode === 'BUS' || leg.mode === 'SUBWAY'));
+    return Boolean(itinerary?.legs?.some((leg) => leg.mode === 'SUBWAY' || (leg.mode === 'BUS' && /^\d{5}$/.test(leg.stopCode) && leg.routeName)));
   }
 
   function liveHasError(itinerary) {
@@ -296,15 +318,22 @@
   function liveFreshness() {
     if (liveRefreshStatus === 'loading') return 'Updating…';
     if (liveRefreshStatus === 'degraded' && !liveUpdatedAt) return 'LTA unavailable';
-    if (!liveUpdatedAt) return 'Checking…';
+    if (!liveUpdatedAt) return 'Not checked';
     const age = Math.max(0, Math.floor((Date.now() - liveUpdatedAt) / 1000));
     const ageLabel = age < 60 ? 'just now' : `${Math.floor(age / 60)} min ago`;
-    return liveRefreshStatus === 'degraded' ? `Stale · ${ageLabel}` : `Updated ${ageLabel}`;
+    return liveRefreshStatus === 'degraded' ? `Stale · ${ageLabel}` : `Checked ${ageLabel}`;
   }
 
   function updateLiveFreshnessDom() {
     const node = document.getElementById('live-freshness');
     if (node) node.textContent = liveFreshness();
+    const note = document.querySelector('.timing-control-note');
+    if (note) note.textContent = liveFreshness();
+    const button = document.querySelector('[data-route-action="refresh-live"]');
+    if (button) {
+      button.disabled = liveRefreshInFlight || liveRefreshStatus === 'loading';
+      button.textContent = liveRefreshInFlight || liveRefreshStatus === 'loading' ? 'Updating…' : 'Refresh live data';
+    }
   }
 
   function canRefreshLive() {
@@ -342,8 +371,8 @@
       await Promise.all([liveBus(itinerary), liveTrain(itinerary)]);
       if (routeState.data === itinerary) {
         const degraded = liveHasError(itinerary);
-        if (!degraded) liveUpdatedAt = Date.now();
-        liveRefreshStatus = degraded ? 'degraded' : 'ready';
+        if (!degraded && hasLiveTiming(itinerary)) liveUpdatedAt = Date.now();
+        liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(itinerary) ? 'ready' : 'idle');
         updateLiveFreshnessDom();
         if (canRefreshLive()) render();
       }
@@ -545,7 +574,8 @@
     const mode = normalizedMode(leg.mode); const from = leg.from || {}; const to = leg.to || {};
     const routeName = String(leg.routeShortName || leg.route || leg.routeId || '').trim();
     const lineName = String(leg.routeLongName || leg.routeName || routeName).trim();
-    return { index, mode, routeName, lineName, label: mode === 'WALK' ? `Walk ${distanceLabel(leg.distance)}` : `${mode === 'SUBWAY' ? 'MRT' : mode}${routeName ? ` ${routeName}` : ''}`, detail: [placeName(from), placeName(to)].filter(Boolean).join(' → '), fromName: placeName(from), toName: placeName(to), fromId: placeId(from), toId: placeId(to), fromPoint: placePoint(from), toPoint: placePoint(to), stopCode: stopCode(from), departureTime: toTimestamp(leg.startTime || leg.departureTime || from.departure || from.departureTime), arrivalTime: toTimestamp(leg.endTime || leg.arrivalTime || to.arrival || to.arrivalTime), duration: Number(leg.duration) || 0, distance: Number(leg.distance) || 0, stopCount: mode === 'WALK' ? null : stopCount(leg), liveStatus: mode === 'BUS' ? 'loading' : null, geometry: String(leg.legGeometry?.points || leg.geometry || '') };
+    const code = stopCode(from);
+    return { index, mode, routeName, lineName, label: mode === 'WALK' ? `Walk ${distanceLabel(leg.distance)}` : `${mode === 'SUBWAY' ? 'MRT' : mode}${routeName ? ` ${routeName}` : ''}`, detail: [placeName(from), placeName(to)].filter(Boolean).join(' → '), fromName: placeName(from), toName: placeName(to), fromId: placeId(from), toId: placeId(to), fromPoint: placePoint(from), toPoint: placePoint(to), stopCode: code, departureTime: toTimestamp(leg.startTime || leg.departureTime || from.departure || from.departureTime), arrivalTime: toTimestamp(leg.endTime || leg.arrivalTime || to.arrival || to.arrivalTime), duration: Number(leg.duration) || 0, distance: Number(leg.distance) || 0, stopCount: mode === 'WALK' ? null : stopCount(leg), liveStatus: mode === 'BUS' ? (/^\d{5}$/.test(code) && Boolean(routeName) ? 'loading' : 'unavailable') : null, trainStatus: mode === 'SUBWAY' ? 'loading' : null, liveUpdatedAt: '', geometry: String(leg.legGeometry?.points || leg.geometry || '') };
   }
 
   function normalizeItinerary(itinerary, service) {
@@ -561,11 +591,13 @@
   }
 
   async function liveBus(itinerary) {
-    await Promise.all(itinerary.legs.filter((leg) => leg.mode === 'BUS' && /^\d{5}$/.test(leg.stopCode) && leg.routeName).map(async (leg) => {
+    const busLegs = itinerary.legs.filter((leg) => leg.mode === 'BUS');
+    busLegs.forEach((leg) => { leg.live = null; leg.liveUpdatedAt = ''; leg.liveStatus = /^\d{5}$/.test(leg.stopCode) && leg.routeName ? 'loading' : 'unavailable'; });
+    await Promise.all(busLegs.filter((leg) => /^\d{5}$/.test(leg.stopCode) && leg.routeName).map(async (leg) => {
       try {
         const response = await fetch(`/api/bus-arrivals?stopCode=${leg.stopCode}&services=${encodeURIComponent(leg.routeName)}`); const data = await response.json();
-        if (response.ok) { leg.live = data.services?.[0] || null; leg.liveStatus = 'ready'; } else leg.liveStatus = 'error';
-      } catch { leg.liveStatus = 'error'; }
+        if (response.ok) { leg.live = data.services?.[0] || null; leg.liveUpdatedAt = data.updatedAt || ''; leg.liveStatus = 'ready'; } else { leg.liveStatus = 'error'; leg.liveUpdatedAt = ''; }
+      } catch { leg.liveStatus = 'error'; leg.liveUpdatedAt = ''; }
     }));
   }
 
@@ -622,7 +654,7 @@
   async function liveTrain(itinerary) {
     const legs = itinerary.legs.filter((leg) => leg.mode === 'SUBWAY');
     if (!legs.length) return;
-    legs.forEach((leg) => { leg.trainStatus = 'loading'; });
+    legs.forEach((leg) => { leg.trainStatus = 'loading'; leg.trainRealtime = null; leg.liveUpdatedAt = ''; });
     const routes = [...new Set(legs.flatMap((leg) => [leg.routeName, leg.lineName]).filter(Boolean))];
     const stops = [...new Set(legs.flatMap((leg) => [leg.fromId, leg.toId]).filter(Boolean))];
     try {
@@ -636,10 +668,11 @@
       itinerary.trainFeedUpdatedAt = payload.updatedAt || '';
       legs.forEach((leg) => {
         leg.trainRealtime = trainMatch(leg, payload);
+        leg.liveUpdatedAt = itinerary.trainFeedUpdatedAt;
         leg.trainStatus = 'ready';
       });
     } catch {
-      legs.forEach((leg) => { leg.trainStatus = 'error'; });
+      legs.forEach((leg) => { leg.trainStatus = 'error'; leg.liveUpdatedAt = ''; });
     }
   }
 
@@ -654,7 +687,7 @@
     routeState = { status: 'ready', data: selected, error: '' };
     render();
     await Promise.all([liveBus(selected), liveTrain(selected)]);
-    if (routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
+    if (routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded && hasLiveTiming(selected)) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(selected) ? 'ready' : 'idle'); render(); }
   }
 
   async function routeData({ preserveCurrent = false } = {}) {
@@ -686,7 +719,7 @@
         itinerary = { ...candidate, alternatives: routed.alternatives, choiceLabel: 'Rerouted' };
         notice = `Rerouted via ${disruptionTools.serviceLabel(itinerary)} to avoid the affected service.`;
       }
-      routeState = { status: 'ready', data: itinerary, error: '', notice }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) { const degraded = liveHasError(itinerary); if (!degraded) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : 'ready'; render(); }
+        routeState = { status: 'ready', data: itinerary, error: '', notice }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) { const degraded = liveHasError(itinerary); if (!degraded && hasLiveTiming(itinerary)) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(itinerary) ? 'ready' : 'idle'); render(); }
     } catch (error) {
       if (previous) {
         liveUpdatedAt = previousUpdatedAt;
@@ -721,6 +754,7 @@
         else if (action === 'manual') manualLocation();
         else if (action === 'locate') locate();
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'refresh-live') refreshLiveTimings();
         else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
         else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; viewing = true; render(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);

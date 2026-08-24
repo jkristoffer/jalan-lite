@@ -1,6 +1,6 @@
-const SHELL_CACHE='jalan-lite-shell-v14';
+const SHELL_CACHE='jalan-lite-shell-v15';
 const RUNTIME_CACHE='jalan-lite-runtime-v1';
-const SHELL_ASSETS=['/','/index.html','/styles.css','/route-shell.css','/app.js','/route-disruptions.js','/route-shell.js','/pwa.js','/mapbox-overrides.css','/map-polish.css','/mapbox-adapter.js','/manifest.webmanifest','/icons/icon-192.png','/icons/icon-512.png','/icons/icon-maskable-512.png','/icons/apple-touch-icon.png'];
+const SHELL_ASSETS=['/','/index.html','/styles.css','/route-shell.css','/app.js','/route-disruptions.js','/route-live-status.js','/route-shell.js','/pwa.js','/mapbox-overrides.css','/map-polish.css','/mapbox-adapter.js','/manifest.webmanifest','/icons/icon-192.png','/icons/icon-512.png','/icons/icon-maskable-512.png','/icons/apple-touch-icon.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(SHELL_CACHE).then(cache=>cache.addAll(SHELL_ASSETS)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>![SHELL_CACHE,RUNTIME_CACHE].includes(key)).map(key=>caches.delete(key)))).then(()=>self.clients.claim()))});
 async function networkFirst(request,fallbackUrl){const cache=await caches.open(SHELL_CACHE);try{const response=await fetch(request);if(response.ok)cache.put(request,response.clone());return response}catch{return(await cache.match(request))||(fallbackUrl?await cache.match(fallbackUrl):undefined)||Response.error()}}
