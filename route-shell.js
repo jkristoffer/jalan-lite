@@ -175,10 +175,40 @@
     return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<div class="timeline-item" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div><div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></div>`).join('')}</div>`;
   }
 
+  function itinerarySignature(itinerary) {
+    return (itinerary?.legs || []).map((leg) => [leg.mode, leg.routeName, leg.fromId || leg.fromName, leg.toId || leg.toName].join(':')).join('|');
+  }
+
+  function alternativeOptions(itinerary) {
+    const source = itinerary?.alternatives || [itinerary];
+    const usable = source.filter(Boolean);
+    if (usable.length < 2) return [];
+    const fastest = usable.reduce((best, item) => (!best || item.duration < best.duration ? item : best), null);
+    const lessWalking = usable.reduce((best, item) => (!best || item.walkDuration < best.walkDuration || (item.walkDuration === best.walkDuration && item.duration < best.duration) ? item : best), null);
+    const fewerTransfers = usable.reduce((best, item) => (!best || item.transfers < best.transfers || (item.transfers === best.transfers && item.duration < best.duration) ? item : best), null);
+    const options = [{ key: 'fastest', label: 'Fastest', itinerary: fastest }, { key: 'walking', label: 'Less walking', itinerary: lessWalking }, { key: 'transfers', label: 'Fewer transfers', itinerary: fewerTransfers }];
+    const seen = new Set();
+    return options.filter((option) => {
+      const signature = itinerarySignature(option.itinerary);
+      if (!signature || seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    });
+  }
+
+  function alternatives(itinerary) {
+    const options = alternativeOptions(itinerary);
+    if (options.length < 2) return '';
+    const selectedSignature = itinerarySignature(itinerary);
+    const tabs = options.map((option) => '<button class="route-alternative' + (itinerarySignature(option.itinerary) === selectedSignature ? ' selected' : '') + '" data-route-action="alternative" data-route-alternative="' + option.key + '"><strong>' + escapeHtml(option.label) + '</strong><span>' + durationLabel(option.itinerary.duration) + ' · ' + option.itinerary.transfers + ' transfer' + (option.itinerary.transfers === 1 ? '' : 's') + '</span></button>').join('');
+    return '<div class="route-alternatives"><div class="route-card-label">Compare routes</div><div class="route-alternative-tabs">' + tabs + '</div></div>';
+  }
+
   function routeLabel(itinerary) {
-    if (itinerary.service === 'next') return `Next available route · ${timeAt(itinerary.startTime)}`;
-    if (itinerary.service === 'planned') return `Route for ${timeLabel(saved.departureTime)}`;
-    return 'Best route now';
+    const choice = itinerary.choiceLabel ? `${itinerary.choiceLabel} · ` : '';
+    if (itinerary.service === 'next') return `${choice}Next available route · ${timeAt(itinerary.startTime)}`;
+    if (itinerary.service === 'planned') return `${choice}Route for ${timeLabel(saved.departureTime)}`;
+    return `${choice}Best route now`;
   }
 
   function card() {
@@ -187,7 +217,7 @@
     if (routeState.status === 'error') return `<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Routing unavailable</h2><p>${escapeHtml(routeState.error)}</p><button class="route-link" data-route-action="refresh">Retry</button></section>`;
     const itinerary = routeState.data;
     if (!itinerary) return '';
-    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
+    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
   }
 
   function dashboard() {
@@ -449,6 +479,17 @@
     }
   }
 
+  async function selectAlternative(key) {
+    const current = routeState.data;
+    const choice = alternativeOptions(current).find((option) => option.key === key);
+    if (!choice || itinerarySignature(choice.itinerary) === itinerarySignature(current)) return;
+    const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
+    routeState = { status: 'ready', data: selected, error: '' };
+    render();
+    await Promise.all([liveBus(selected), liveTrain(selected)]);
+    if (routeState.data === selected) render();
+  }
+
   async function routeData() {
     routeState = { status: 'loading', data: null, error: '' }; render();
     const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : '';
@@ -476,6 +517,7 @@
         else if (action === 'manual') manualLocation();
         else if (action === 'locate') locate();
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
         else if (action === 'viewer' && routeState.data) { viewing = true; render(); }
         else if (action === 'close-viewer') { viewing = false; render(); }
       };
