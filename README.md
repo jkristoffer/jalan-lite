@@ -12,6 +12,7 @@ A lightweight Singapore bus-arrival app based on the Claude Design prototype.
 - Keeps the LTA DataMall Account Key server-side in a Vercel Function.
 - Uses LTA GTFS-Realtime train trip updates and service alerts for MRT legs when the feed has a matching line or station.
 - Supports both Leave at and Arrive by commute planning through OneMap transit routing.
+- Lets users tap a journey leg to focus its geometry and boarding/alighting points on the map.
 
 ## Vercel setup
 

@@ -11,6 +11,7 @@
   let routeState = { status: 'idle', data: null, error: '' };
   let map = null;
   let viewing = false;
+  let selectedLegIndex = null;
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -175,7 +176,7 @@
   function timeline(itinerary) {
     const legs = itinerary?.legs || [];
     if (!legs.length) return '<div class="timeline-empty">No step-by-step details returned.</div>';
-    return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<div class="timeline-item" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div><div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></div>`).join('')}</div>`;
+    return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<button type="button" class="timeline-item${selectedLegIndex === index ? ' selected' : ''}" data-route-action="leg" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div><div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></button>`).join('')}</div>`;
   }
 
   function itinerarySignature(itinerary) {
@@ -330,20 +331,39 @@
     try {
       mapboxgl.accessToken = await mapToken();
       const features = itinerary.legs.map((leg, index) => { const coordinates = leg.geometry ? decodePolyline(leg.geometry) : []; return coordinates.length > 1 ? { type: 'Feature', properties: { mode: leg.mode, index }, geometry: { type: 'LineString', coordinates } } : null; }).filter(Boolean);
+      const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
+      const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
       map = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [saved.originPoint.lng, saved.originPoint.lat], zoom: 12.5, dragRotate: false, touchPitch: false });
       map.touchZoomRotate.disableRotation();
       map.on('load', () => {
         if (features.length) {
           map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features } });
-          map.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': '#777', 'line-width': 4, 'line-dasharray': [1, 1.5] } });
-          map.addLayer({ id: 'route-bus', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'BUS'], paint: { 'line-color': '#1f7a4d', 'line-width': 6 } });
-          map.addLayer({ id: 'route-mrt', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'SUBWAY'], paint: { 'line-color': '#222', 'line-width': 7 } });
+          const opacity = selectedLeg ? 0.22 : 0.88;
+          map.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': '#777', 'line-width': 4, 'line-opacity': opacity, 'line-dasharray': [1, 1.5] } });
+          map.addLayer({ id: 'route-bus', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'BUS'], paint: { 'line-color': '#1f7a4d', 'line-width': 6, 'line-opacity': opacity } });
+          map.addLayer({ id: 'route-mrt', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'SUBWAY'], paint: { 'line-color': '#222', 'line-width': 7, 'line-opacity': opacity } });
+          if (selectedLeg) map.addLayer({ id: 'route-selected', type: 'line', source: 'route', filter: ['==', ['get', 'index'], selectedLegIndex], paint: { 'line-color': '#D42E12', 'line-width': 9, 'line-opacity': 1 } });
           const bounds = new mapboxgl.LngLatBounds();
-          features.forEach((feature) => feature.geometry.coordinates.forEach((coordinate) => bounds.extend(coordinate)));
+          const focusFeatures = selectedFeature ? [selectedFeature] : features;
+          focusFeatures.forEach((feature) => feature.geometry.coordinates.forEach((coordinate) => bounds.extend(coordinate)));
+          if (selectedLeg?.fromPoint) bounds.extend([selectedLeg.fromPoint.lng, selectedLeg.fromPoint.lat]);
+          if (selectedLeg?.toPoint) bounds.extend([selectedLeg.toPoint.lng, selectedLeg.toPoint.lat]);
           if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 48, duration: 0 });
+        } else if (selectedLeg?.fromPoint || selectedLeg?.toPoint) {
+          const bounds = new mapboxgl.LngLatBounds();
+          if (selectedLeg.fromPoint) bounds.extend([selectedLeg.fromPoint.lng, selectedLeg.fromPoint.lat]);
+          if (selectedLeg.toPoint) bounds.extend([selectedLeg.toPoint.lng, selectedLeg.toPoint.lat]);
+          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 72, duration: 0 });
         }
         new mapboxgl.Marker({ color: '#16181A' }).setLngLat([saved.originPoint.lng, saved.originPoint.lat]).addTo(map);
         new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([saved.destinationPoint.lng, saved.destinationPoint.lat]).addTo(map);
+        if (selectedLeg) {
+          const from = selectedLeg.fromPoint || (selectedFeature?.geometry.coordinates[0] ? { lng: selectedFeature.geometry.coordinates[0][0], lat: selectedFeature.geometry.coordinates[0][1] } : null);
+          const lastCoordinate = selectedFeature?.geometry.coordinates[selectedFeature.geometry.coordinates.length - 1];
+          const to = selectedLeg.toPoint || (lastCoordinate ? { lng: lastCoordinate[0], lat: lastCoordinate[1] } : null);
+          if (from) new mapboxgl.Marker({ color: '#005EC4' }).setLngLat([from.lng, from.lat]).addTo(map);
+          if (to) new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([to.lng, to.lat]).addTo(map);
+        }
       });
       map.on('error', () => { if (fallback) fallback.hidden = false; });
     } catch { if (fallback) fallback.hidden = false; }
@@ -383,6 +403,11 @@
   function placeName(place) { return String(place?.name || place?.stopName || place?.stationName || place?.description || '').trim(); }
   function placeId(place) { return String(place?.stopId || place?.stationId || place?.id || place?.stopCode || '').trim(); }
   function stopCode(place) { return String(place?.stopCode || '').trim(); }
+  function placePoint(place) {
+    const lat = Number(place?.lat ?? place?.latitude);
+    const lng = Number(place?.lon ?? place?.lng ?? place?.longitude);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }
 
   function stopCount(leg) {
     const stops = leg?.intermediateStops || leg?.stops || [];
@@ -395,7 +420,7 @@
     const mode = normalizedMode(leg.mode); const from = leg.from || {}; const to = leg.to || {};
     const routeName = String(leg.routeShortName || leg.route || leg.routeId || '').trim();
     const lineName = String(leg.routeLongName || leg.routeName || routeName).trim();
-    return { index, mode, routeName, lineName, label: mode === 'WALK' ? `Walk ${distanceLabel(leg.distance)}` : `${mode === 'SUBWAY' ? 'MRT' : mode}${routeName ? ` ${routeName}` : ''}`, detail: [placeName(from), placeName(to)].filter(Boolean).join(' → '), fromName: placeName(from), toName: placeName(to), fromId: placeId(from), toId: placeId(to), stopCode: stopCode(from), departureTime: toTimestamp(leg.startTime || leg.departureTime || from.departure || from.departureTime), arrivalTime: toTimestamp(leg.endTime || leg.arrivalTime || to.arrival || to.arrivalTime), duration: Number(leg.duration) || 0, distance: Number(leg.distance) || 0, stopCount: mode === 'WALK' ? null : stopCount(leg), liveStatus: mode === 'BUS' ? 'loading' : null, geometry: String(leg.legGeometry?.points || leg.geometry || '') };
+    return { index, mode, routeName, lineName, label: mode === 'WALK' ? `Walk ${distanceLabel(leg.distance)}` : `${mode === 'SUBWAY' ? 'MRT' : mode}${routeName ? ` ${routeName}` : ''}`, detail: [placeName(from), placeName(to)].filter(Boolean).join(' → '), fromName: placeName(from), toName: placeName(to), fromId: placeId(from), toId: placeId(to), fromPoint: placePoint(from), toPoint: placePoint(to), stopCode: stopCode(from), departureTime: toTimestamp(leg.startTime || leg.departureTime || from.departure || from.departureTime), arrivalTime: toTimestamp(leg.endTime || leg.arrivalTime || to.arrival || to.arrivalTime), duration: Number(leg.duration) || 0, distance: Number(leg.distance) || 0, stopCount: mode === 'WALK' ? null : stopCount(leg), liveStatus: mode === 'BUS' ? 'loading' : null, geometry: String(leg.legGeometry?.points || leg.geometry || '') };
   }
 
   function normalizeItinerary(itinerary, service) {
@@ -487,6 +512,7 @@
     const current = routeState.data;
     const choice = alternativeOptions(current).find((option) => option.key === key);
     if (!choice || itinerarySignature(choice.itinerary) === itinerarySignature(current)) return;
+    selectedLegIndex = null;
     const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
     routeState = { status: 'ready', data: selected, error: '' };
     render();
@@ -495,6 +521,7 @@
   }
 
   async function routeData() {
+    selectedLegIndex = null;
     routeState = { status: 'loading', data: null, error: '' }; render();
     const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(saved.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
     try {
@@ -522,9 +549,10 @@
         else if (action === 'locate') locate();
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
+        else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; viewing = true; render(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
-        else if (action === 'viewer' && routeState.data) { viewing = true; render(); }
-        else if (action === 'close-viewer') { viewing = false; render(); }
+        else if (action === 'viewer' && routeState.data) { selectedLegIndex = null; viewing = true; render(); }
+        else if (action === 'close-viewer') { viewing = false; selectedLegIndex = null; render(); }
       };
     });
   }
