@@ -39,14 +39,20 @@ function unzipFirst(bytes) {
       if (central >= 0) compressedSize = uint32(bytes, central + 20);
     }
 
-    if (!name.endsWith('/') && compressedSize >= 0 && dataStart + compressedSize <= bytes.length) {
+    const isFeedEntry = /\.(?:pb|bin)(?:\.gz)?$/i.test(name) || /trip.*update|service.*alert/i.test(name);
+    if (!name.endsWith('/') && isFeedEntry && compressedSize >= 0 && dataStart + compressedSize <= bytes.length) {
       const payload = bytes.slice(dataStart, dataStart + compressedSize);
       if (method === 0) return payload;
       if (method === 8) return new Uint8Array(inflateRawSync(payload));
     }
 
-    if (!compressedSize) break;
-    cursor = dataStart + compressedSize;
+    const nextEntry = dataStart + compressedSize;
+    if (nextEntry > cursor && nextEntry <= bytes.length) cursor = nextEntry;
+    else {
+      const nextHeader = findSignature(bytes, 0x04034b50, dataStart);
+      if (nextHeader < 0) break;
+      cursor = nextHeader;
+    }
   }
 
   throw new Error('Unable to read the LTA GTFS-Realtime ZIP feed.');
