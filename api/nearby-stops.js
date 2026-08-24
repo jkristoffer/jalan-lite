@@ -1,10 +1,11 @@
 const LTA_URL = 'https://datamall2.mytransport.sg/ltaodataservice/BusStops';
 const PAGE_SIZE = 500;
 const MAX_PAGES = 20;
-const CACHE_MS = 6 * 60 * 60 * 1000;
+const CACHE_MS = 12 * 60 * 60 * 1000;
 
 let cachedStops = null;
 let cachedAt = 0;
+let loadingStops = null;
 
 function distanceMetres(lat1, lon1, lat2, lon2) {
   const rad = Math.PI / 180;
@@ -15,21 +16,33 @@ function distanceMetres(lat1, lon1, lat2, lon2) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function loadStops(apiKey) {
-  if (cachedStops && Date.now() - cachedAt < CACHE_MS) return cachedStops;
+async function fetchPage(apiKey, page) {
+  const url = new URL(LTA_URL);
+  url.searchParams.set('$skip', String(page * PAGE_SIZE));
+  const response = await fetch(url, {
+    headers: { AccountKey: apiKey, Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`LTA BusStops request failed (${response.status}).`);
+  const payload = await response.json();
+  return payload.value || [];
+}
 
+async function buildStopCache(apiKey) {
   const all = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const url = new URL(LTA_URL);
-    url.searchParams.set('$skip', String(page * PAGE_SIZE));
-    const response = await fetch(url, {
-      headers: { AccountKey: apiKey, Accept: 'application/json' },
-    });
-    if (!response.ok) throw new Error(`LTA BusStops request failed (${response.status}).`);
-    const payload = await response.json();
-    const rows = payload.value || [];
-    all.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
+
+  for (let page = 0; page < MAX_PAGES; page += 2) {
+    const [first, second] = await Promise.allSettled([
+      fetchPage(apiKey, page),
+      page + 1 < MAX_PAGES ? fetchPage(apiKey, page + 1) : Promise.resolve([]),
+    ]);
+
+    if (first.status === 'rejected') throw first.reason;
+    all.push(...first.value);
+    if (first.value.length < PAGE_SIZE) break;
+
+    if (second.status === 'rejected') throw second.reason;
+    all.push(...second.value);
+    if (second.value.length < PAGE_SIZE) break;
   }
 
   cachedStops = all.filter((stop) => stop.BusStopCode && stop.Latitude && stop.Longitude);
@@ -37,8 +50,18 @@ async function loadStops(apiKey) {
   return cachedStops;
 }
 
+async function loadStops(apiKey) {
+  if (cachedStops && Date.now() - cachedAt < CACHE_MS) return cachedStops;
+  if (!loadingStops) {
+    loadingStops = buildStopCache(apiKey).finally(() => {
+      loadingStops = null;
+    });
+  }
+  return loadingStops;
+}
+
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');
 
   try {
     const url = new URL(req.url, 'https://jalan.local');
