@@ -2,7 +2,14 @@
 const ROUTE_KEY='jalan-lite-routes-v1';
 const shell=document.createElement('section');
 const launcher=document.createElement('button');
+const SG_CENTER={lng:103.8198,lat:1.3521};
 let route=loadRoute();
+let draft=makeDraft(route);
+let pickerField=null;
+let pendingPoint=null;
+let pickerController=null;
+let mapAssetsPromise=null;
+let mapTokenPromise=null;
 
 shell.className='route-shell';
 launcher.className='route-launcher';
@@ -11,9 +18,18 @@ launcher.textContent='Commute';
 launcher.hidden=true;
 
 function esc(value=''){
-  return String(value).replace(/[&<>'\"]/g,char=>({
-    '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'
+  return String(value).replace(/[&<>'"]/g,char=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'
   }[char]));
+}
+
+function makeDraft(value){
+  return {
+    origin:value?.origin||'',
+    destination:value?.destination||'',
+    originPoint:value?.originPoint||null,
+    destinationPoint:value?.destinationPoint||null
+  };
 }
 
 function loadRoute(){
@@ -27,7 +43,88 @@ function loadRoute(){
 
 function saveRoute(next){
   route=next;
+  draft=makeDraft(next);
   localStorage.setItem(ROUTE_KEY,JSON.stringify(next));
+}
+
+function loadStyle(href,id){
+  if(document.getElementById(id))return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const link=document.createElement('link');
+    link.id=id;
+    link.rel='stylesheet';
+    link.href=href;
+    link.onload=resolve;
+    link.onerror=()=>reject(new Error('Unable to load map styles.'));
+    document.head.appendChild(link);
+  });
+}
+
+function loadScript(src,id){
+  if(document.getElementById(id))return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.id=id;
+    script.src=src;
+    script.onload=resolve;
+    script.onerror=()=>reject(new Error('Unable to load map.'));
+    document.head.appendChild(script);
+  });
+}
+
+function ensureMapbox(){
+  if(window.mapboxgl)return Promise.resolve(window.mapboxgl);
+  if(!mapAssetsPromise){
+    mapAssetsPromise=Promise.all([
+      loadStyle('https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.css','mapbox-gl-css'),
+      loadScript('https://api.mapbox.com/mapbox-gl-js/v3.26.0/mapbox-gl.js','mapbox-gl-js')
+    ]).then(()=>window.mapboxgl)
+      .catch(error=>{mapAssetsPromise=null;throw error});
+  }
+  return mapAssetsPromise;
+}
+
+function getMapToken(){
+  if(!mapTokenPromise){
+    mapTokenPromise=fetch('/api/map-config')
+      .then(async response=>{
+        const data=await response.json();
+        if(!response.ok||!data.token)throw new Error(data.error||'Map is not configured.');
+        return data.token;
+      });
+  }
+  return mapTokenPromise;
+}
+
+function cleanSingaporeLabel(value){
+  return String(value||'')
+    .replace(/,\s*Singapore(?:\s+\d{6})?$/i,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+async function reverseGeocode(lng,lat){
+  const token=await getMapToken();
+  const url=new URL('https://api.mapbox.com/search/geocode/v6/reverse');
+  url.searchParams.set('longitude',String(lng));
+  url.searchParams.set('latitude',String(lat));
+  url.searchParams.set('country','sg');
+  url.searchParams.set('language','en');
+  url.searchParams.set('limit','1');
+  url.searchParams.set('access_token',token);
+
+  const response=await fetch(url);
+  if(!response.ok)throw new Error('Unable to identify this area.');
+  const data=await response.json();
+  const feature=data.features?.[0];
+  const props=feature?.properties||{};
+  const label=cleanSingaporeLabel(
+    props.full_address
+    || [props.name_preferred||props.name,props.place_formatted].filter(Boolean).join(', ')
+    || feature?.place_name
+    || 'Selected area'
+  );
+  return label||'Selected area';
 }
 
 function networkBadges(){
@@ -48,43 +145,81 @@ function showShell(){
 }
 
 function showLegacyBus(){
+  destroyPicker();
   shell.hidden=true;
   launcher.hidden=false;
 }
 
+function locationValue(field){
+  const value=draft[field];
+  if(value)return esc(value);
+  return field==='origin'?'Choose where you start':'Choose where you’re going';
+}
+
 function setupView(){
+  const canSave=draft.origin&&draft.destination;
   return `
     <div class="route-panel">
       ${brand()}
       <div class="route-setup-copy">
         <div class="route-kicker">Bus + MRT · Singapore</div>
-        <h1>Your everyday route.</h1>
-        <p>Save the trip you make on repeat. Jalan will eventually combine walking, bus and MRT into one commute view.</p>
+        <h1>Pick your regular trip.</h1>
+        <p>Choose both areas on the map. Jalan saves the coordinates for bus and MRT routing.</p>
         ${networkBadges()}
       </div>
 
-      <form id="route-form" class="route-form">
+      <div class="route-form">
         <div class="route-input-card">
-          <label class="route-location-row">
+          <button class="route-location-row" type="button" data-route-pick="origin">
             <span class="route-node origin" aria-hidden="true"></span>
             <span class="route-field-copy">
               <span class="route-field-label">From</span>
-              <input name="origin" autocomplete="street-address" inputmode="search" placeholder="Home, Tampines MRT, Blk 123…" required>
+              <span class="route-location-value${draft.origin?'':' placeholder'}">${locationValue('origin')}</span>
             </span>
-          </label>
-          <label class="route-location-row">
+            <span class="route-map-action" aria-hidden="true">Map</span>
+          </button>
+          <button class="route-location-row" type="button" data-route-pick="destination">
             <span class="route-node destination" aria-hidden="true"></span>
             <span class="route-field-copy">
               <span class="route-field-label">To</span>
-              <input name="destination" autocomplete="street-address" inputmode="search" placeholder="Office, Raffles Place MRT…" required>
+              <span class="route-location-value${draft.destination?'':' placeholder'}">${locationValue('destination')}</span>
             </span>
-          </label>
+            <span class="route-map-action" aria-hidden="true">Map</span>
+          </button>
         </div>
-        <div class="route-form-hint">Singapore addresses, MRT stations and landmarks work best.</div>
-        <button class="route-primary" type="submit">Save commute</button>
-      </form>
+        <div class="route-form-hint">Pan the map and place the pin on your block, MRT station, office or nearby landmark.</div>
+        <button class="route-primary" type="button" data-route-action="save-route" ${canSave?'':'disabled'}>${route?'Update commute':'Save commute'}</button>
+      </div>
 
       <button class="route-link" type="button" data-route-action="bus">I only need bus arrivals</button>
+    </div>`;
+}
+
+function pickerView(){
+  const fieldLabel=pickerField==='origin'?'starting point':'destination';
+  return `
+    <div class="route-picker">
+      <div class="picker-topbar">
+        <button class="picker-back" type="button" data-route-action="cancel-picker" aria-label="Back">‹</button>
+        <div>
+          <div class="route-kicker">Choose ${fieldLabel}</div>
+          <div class="picker-title">Move map to select</div>
+        </div>
+      </div>
+
+      <div class="route-picker-map-wrap">
+        <div id="route-picker-map" class="route-picker-map" aria-label="Map of Singapore"></div>
+        <div class="picker-crosshair" aria-hidden="true"><span></span></div>
+        <div id="picker-loading" class="picker-loading">Loading Singapore map…</div>
+        <button class="picker-locate" type="button" data-route-action="my-location">◎ My location</button>
+      </div>
+
+      <div class="picker-sheet">
+        <div class="route-card-label">${pickerField==='origin'?'From':'To'}</div>
+        <div id="picker-label" class="picker-place">${esc(pendingPoint?.label||'Move the map to choose an area')}</div>
+        <div id="picker-coords" class="picker-coords">${pendingPoint?`${pendingPoint.lat.toFixed(5)}, ${pendingPoint.lng.toFixed(5)}`:'Singapore'}</div>
+        <button class="route-primary" type="button" data-route-action="confirm-picker" ${pendingPoint?'':'disabled'}>Use this area</button>
+      </div>
     </div>`;
 }
 
@@ -145,41 +280,213 @@ function dashboardView(){
     </div>`;
 }
 
-function render(){
-  shell.innerHTML=route ? dashboardView() : setupView();
-
-  const form=shell.querySelector('#route-form');
-  if(form){
-    form.addEventListener('submit',event=>{
-      event.preventDefault();
-      const data=new FormData(form);
-      const origin=String(data.get('origin')||'').trim();
-      const destination=String(data.get('destination')||'').trim();
-      if(!origin||!destination)return;
-      saveRoute({id:'route-1',origin,destination,createdAt:new Date().toISOString()});
-      render();
-    });
+function destroyPicker(){
+  if(pickerController){
+    pickerController.destroy();
+    pickerController=null;
   }
+}
+
+function updatePickerText(point){
+  const label=document.getElementById('picker-label');
+  const coords=document.getElementById('picker-coords');
+  const confirm=shell.querySelector('[data-route-action="confirm-picker"]');
+  if(label)label.textContent=point?.label||'Move the map to choose an area';
+  if(coords)coords.textContent=point?`${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`:'Singapore';
+  if(confirm)confirm.disabled=!point;
+}
+
+async function mountPicker(){
+  const container=document.getElementById('route-picker-map');
+  if(!container||!pickerField)return;
+
+  const loading=document.getElementById('picker-loading');
+  const existing=draft[`${pickerField}Point`];
+  const center=existing||SG_CENTER;
+
+  try{
+    const [mapboxgl,token]=await Promise.all([ensureMapbox(),getMapToken()]);
+    if(!document.getElementById('route-picker-map')||!pickerField)return;
+    mapboxgl.accessToken=token;
+
+    const map=new mapboxgl.Map({
+      container,
+      style:'mapbox://styles/mapbox/standard',
+      center:[center.lng,center.lat],
+      zoom:existing?16:13.2,
+      minZoom:10.5,
+      maxZoom:18.2,
+      maxBounds:[[103.55,1.15],[104.10,1.49]],
+      maxPitch:0,
+      pitch:0,
+      bearing:0,
+      dragRotate:false,
+      touchPitch:false,
+      attributionControl:true,
+      logoPosition:'bottom-left',
+      config:{
+        basemap:{
+          theme:'monochrome',
+          lightPreset:'day',
+          showPointOfInterestLabels:true,
+          showTransitLabels:true,
+          show3dObjects:false,
+          showPlaceLabels:true,
+          showRoadLabels:true,
+          font:'Barlow'
+        }
+      }
+    });
+
+    map.touchZoomRotate.disableRotation();
+    map.addControl(new mapboxgl.NavigationControl({showCompass:false}),'top-right');
+
+    await new Promise((resolve,reject)=>{
+      map.once('load',resolve);
+      map.once('error',event=>reject(event?.error||new Error('Unable to load map.')));
+    });
+
+    let requestId=0;
+    let destroyed=false;
+
+    const emitSelection=async()=>{
+      const id=++requestId;
+      const centerPoint=map.getCenter();
+      let label='Selected area';
+      try{
+        label=await reverseGeocode(centerPoint.lng,centerPoint.lat);
+      }catch{}
+      if(destroyed||id!==requestId)return;
+      pendingPoint={lng:centerPoint.lng,lat:centerPoint.lat,label};
+      updatePickerText(pendingPoint);
+    };
+
+    map.on('moveend',emitSelection);
+    emitSelection();
+
+    pickerController={
+      setCenter({lng,lat,zoom=16}){
+        map.easeTo({
+          center:[lng,lat],
+          zoom,
+          duration:350,
+          easing:t=>1-Math.pow(1-t,3)
+        });
+      },
+      destroy(){
+        destroyed=true;
+        requestId+=1;
+        map.remove();
+      }
+    };
+
+    if(loading)loading.hidden=true;
+  }catch(error){
+    if(loading){
+      loading.hidden=false;
+      loading.textContent=error.message||'Unable to load map.';
+    }
+  }
+}
+
+function openPicker(field){
+  destroyPicker();
+  pickerField=field;
+  pendingPoint=draft[`${field}Point`]
+    ? {...draft[`${field}Point`],label:draft[field]}
+    : null;
+  render();
+}
+
+function confirmPicker(){
+  if(!pickerField||!pendingPoint)return;
+  draft[pickerField]=pendingPoint.label;
+  draft[`${pickerField}Point`]={lat:pendingPoint.lat,lng:pendingPoint.lng};
+  destroyPicker();
+  pickerField=null;
+  pendingPoint=null;
+  render();
+}
+
+function useMyLocation(){
+  if(!navigator.geolocation||!pickerController)return;
+  const button=shell.querySelector('[data-route-action="my-location"]');
+  if(button){
+    button.disabled=true;
+    button.textContent='Locating…';
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      pickerController?.setCenter({lng:pos.coords.longitude,lat:pos.coords.latitude,zoom:16});
+      if(button){
+        button.disabled=false;
+        button.textContent='◎ My location';
+      }
+    },
+    ()=>{
+      if(button){
+        button.disabled=false;
+        button.textContent='Location unavailable';
+      }
+    },
+    {enableHighAccuracy:true,timeout:8000,maximumAge:60000}
+  );
+}
+
+function render(){
+  destroyPicker();
+
+  if(pickerField){
+    shell.innerHTML=pickerView();
+    bindActions();
+    mountPicker();
+    return;
+  }
+
+  shell.innerHTML=route ? dashboardView() : setupView();
+  bindActions();
+}
+
+function bindActions(){
+  shell.querySelectorAll('[data-route-pick]').forEach(button=>{
+    button.addEventListener('click',()=>openPicker(button.dataset.routePick));
+  });
 
   shell.querySelectorAll('[data-route-action]').forEach(button=>{
     button.addEventListener('click',()=>{
       const action=button.dataset.routeAction;
       if(action==='bus')showLegacyBus();
       if(action==='edit'){
-        const current=route;
+        draft=makeDraft(route);
         route=null;
         render();
-        const form=shell.querySelector('#route-form');
-        if(form&&current){
-          form.elements.origin.value=current.origin;
-          form.elements.destination.value=current.destination;
-        }
+      }
+      if(action==='save-route'){
+        if(!draft.origin||!draft.destination)return;
+        saveRoute({
+          id:'route-1',
+          origin:draft.origin,
+          destination:draft.destination,
+          originPoint:draft.originPoint,
+          destinationPoint:draft.destinationPoint,
+          updatedAt:new Date().toISOString()
+        });
+        render();
       }
       if(action==='clear'){
         localStorage.removeItem(ROUTE_KEY);
         route=null;
+        draft=makeDraft(null);
         render();
       }
+      if(action==='cancel-picker'){
+        destroyPicker();
+        pickerField=null;
+        pendingPoint=null;
+        render();
+      }
+      if(action==='confirm-picker')confirmPicker();
+      if(action==='my-location')useMyLocation();
     });
   });
 }
