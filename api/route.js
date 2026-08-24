@@ -13,13 +13,14 @@ function addDay(date){
 function validCoord(value){return /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(value)}
 function validTime(value){return /^([01]\d|2[0-3]):[0-5]\d$/.test(value)}
 function isNoRoute(response,data){return response.status===404||/no .*route found/i.test(String(data?.error||data?.message||''))}
-async function requestRoute({token,start,end,date,time,numItineraries='3',maxWalkDistance='2000'}){
+async function requestRoute({token,start,end,date,time,arriveBy=false,numItineraries='3',maxWalkDistance='2000'}){
   const url=new URL('https://www.onemap.gov.sg/api/public/routingsvc/route');
   url.searchParams.set('start',start);
   url.searchParams.set('end',end);
   url.searchParams.set('routeType','pt');
   url.searchParams.set('date',date);
   url.searchParams.set('time',time);
+  url.searchParams.set('arriveBy',String(Boolean(arriveBy)));
   url.searchParams.set('mode','TRANSIT');
   url.searchParams.set('maxWalkDistance',maxWalkDistance);
   url.searchParams.set('numItineraries',numItineraries);
@@ -34,6 +35,8 @@ module.exports=async function handler(req,res){
   try{
     const start=String(req.query?.start||''),end=String(req.query?.end||'');
     const requestedTime=String(req.query?.time||'').trim();
+    const requestedMode=String(req.query?.timeMode||'').trim().toLowerCase()==='arrive'?'arrive':'depart';
+    const arriveBy=requestedMode==='arrive';
     if(!validCoord(start)||!validCoord(end))return res.status(400).json({error:'Valid start and end coordinates are required.'});
     if(requestedTime&&!validTime(requestedTime))return res.status(400).json({error:'Time must use HH:MM format.'});
 
@@ -41,18 +44,18 @@ module.exports=async function handler(req,res){
     const now=sgDateTime();
     const planned=Boolean(requestedTime);
     const queryTime=planned?`${requestedTime}:00`:now.time;
-    const current=await requestRoute({token,start,end,date:now.date,time:queryTime});
+    const current=await requestRoute({token,start,end,date:now.date,time:queryTime,arriveBy});
     if(current.response.ok&&!current.data.error){
-      current.data._jalan={service:planned?'planned':'now',requestedDate:now.date,requestedTime:queryTime};
+      current.data._jalan={service:planned?'planned':'now',requestedDate:now.date,requestedTime:queryTime,timeMode:requestedMode};
       return res.status(200).json(current.data);
     }
 
     if(!planned&&isNoRoute(current.response,current.data)){
       const nextDate=now.hour<5?now.date:addDay(now.date);
       const nextTime='05:30:00';
-      const next=await requestRoute({token,start,end,date:nextDate,time:nextTime});
+      const next=await requestRoute({token,start,end,date:nextDate,time:nextTime,arriveBy:false});
       if(next.response.ok&&!next.data.error){
-        next.data._jalan={service:'next',requestedDate:nextDate,requestedTime:nextTime,reason:'No public transport route was available for the current time.'};
+        next.data._jalan={service:'next',requestedDate:nextDate,requestedTime:nextTime,timeMode:'depart',reason:'No public transport route was available for the current time.'};
         return res.status(200).json(next.data);
       }
       return res.status(current.response.status||404).json({error:current.data.error||'No public transport route is available now.',nextServiceError:next.data.error||null});

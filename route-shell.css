@@ -42,4 +42,5 @@
 .route-alternative.selected{border-color:var(--ink,#16181A);background:var(--ink,#16181A);color:var(--paper,#F7F6F3)}
 .route-alternative.selected span{color:#C8C6C0}
 .route-viewer-sheet .timeline{margin-top:20px}
+.route-time-mode{display:flex;gap:6px;margin-top:12px;padding:4px;border:1px solid var(--line,#DFDDD7);border-radius:16px;background:#fff}.route-time-mode-button{flex:1;height:36px;border:0;border-radius:12px;background:transparent;color:var(--muted,#6E7377);font:600 13px 'Barlow',sans-serif;cursor:pointer}.route-time-mode-button.selected{background:var(--ink,#16181A);color:var(--paper,#F7F6F3)}
 @media(max-width:430px){.journey-time-grid>div{padding-left:12px;padding-right:12px}.timeline-item{grid-template-columns:24px minmax(0,1fr);gap:9px}.timeline-transfer{margin-left:33px}.timeline-foot{align-items:flex-start;flex-direction:column;gap:5px}.timeline-foot>.leg-live{justify-content:flex-start}}

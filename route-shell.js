@@ -101,7 +101,8 @@
       <div class="route-setup-copy"><div class="route-kicker">Bus + MRT · Singapore</div><h1>Where are you going?</h1><p>Pick on the map, use your location, or type a Singapore place.</p>${network()}</div>
       <div class="route-form">
         <div class="route-input-card">${locationRow('origin', 'From', 'Choose where you start', 'origin')}${locationRow('destination', 'To', 'Choose where you’re going', 'destination')}</div>
-        <label class="route-time-field"><span><span class="route-field-label">Leave at</span><small>Used to calculate the commute timetable</small></span><input id="route-time-input" type="time" value="${escapeHtml(draftState.departureTime || '08:30')}" step="300"></label>
+        <div class="route-time-mode" role="group" aria-label="Journey time preference"><button type="button" class="route-time-mode-button${draftState.timeMode === 'depart' ? ' selected' : ''}" data-route-action="time-mode" data-time-mode="depart">Leave at</button><button type="button" class="route-time-mode-button${draftState.timeMode === 'arrive' ? ' selected' : ''}" data-route-action="time-mode" data-time-mode="arrive">Arrive by</button></div>
+        <label class="route-time-field"><span><span class="route-field-label">${draftState.timeMode === 'arrive' ? 'Arrive by' : 'Leave at'}</span><small>Used to calculate the commute timetable</small></span><input id="route-time-input" type="time" value="${escapeHtml(draftState.departureTime || '08:30')}" step="300"></label>
         <button class="route-primary" data-route-action="save" ${draftState.origin && draftState.destination ? '' : 'disabled'}>${saved ? 'Update' : 'Save'} commute</button>
       </div>
       <button class="route-link" data-route-action="bus">I only need bus arrivals</button>
@@ -117,7 +118,9 @@
     const itinerary = routeState.data;
     const departure = itinerary?.startTime ? timeAt(itinerary.startTime) : timeLabel(saved?.departureTime || draftState.departureTime);
     const arrival = itinerary?.endTime ? timeAt(itinerary.endTime) : '—';
-    return `<section class="journey-card"><div class="journey-row"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">${escapeHtml(saved.origin)}</div></div></div><div class="journey-row"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">${escapeHtml(saved.destination)}</div></div></div><div class="journey-time-grid"><div><span class="route-field-label">Leave at</span><strong>${escapeHtml(departure)}</strong></div><div><span class="route-field-label">Expected arrival</span><strong>${escapeHtml(arrival || '—')}</strong></div></div></section>`;
+    const arriveBy = saved?.timeMode === 'arrive';
+    const requested = timeLabel(saved?.departureTime || draftState.departureTime);
+    return `<section class="journey-card"><div class="journey-row"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">${escapeHtml(saved.origin)}</div></div></div><div class="journey-row"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">${escapeHtml(saved.destination)}</div></div></div><div class="journey-time-grid"><div><span class="route-field-label">${arriveBy ? 'Arrive by' : 'Leave at'}</span><strong>${escapeHtml(arriveBy ? requested : departure)}</strong></div><div><span class="route-field-label">${arriveBy ? 'Expected departure' : 'Expected arrival'}</span><strong>${escapeHtml(arriveBy ? (departure || '—') : (arrival || '—'))}</strong></div></div></section>`;
   }
 
   function timing(leg) {
@@ -207,7 +210,7 @@
   function routeLabel(itinerary) {
     const choice = itinerary.choiceLabel ? `${itinerary.choiceLabel} · ` : '';
     if (itinerary.service === 'next') return `${choice}Next available route · ${timeAt(itinerary.startTime)}`;
-    if (itinerary.service === 'planned') return `${choice}Route for ${timeLabel(saved.departureTime)}`;
+    if (itinerary.service === 'planned') return `${choice}${saved?.timeMode === 'arrive' ? 'Route arriving by' : 'Route leaving at'} ${timeLabel(saved.departureTime)}`;
     return `${choice}Best route now`;
   }
 
@@ -232,7 +235,8 @@
 
   function viewer() {
     const itinerary = routeState.data;
-    return `<div class="route-viewer"><div class="picker-topbar"><button class="picker-back" data-route-action="close-viewer">‹</button><div><div class="route-kicker">${escapeHtml(timeLabel(saved.departureTime))}</div><div class="picker-title">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div></div><div class="route-viewer-map-wrap"><div id="route-viewer-map" class="route-viewer-map"></div><div id="viewer-fallback" class="map-fallback" hidden><strong>Map unavailable</strong><span>The step-by-step route is still shown below.</span></div></div><div class="route-viewer-sheet"><div class="route-viewer-summary"><div><span class="route-card-label">Journey</span><strong>${itinerary ? durationLabel(itinerary.duration) : '—'}</strong></div><span>${itinerary ? itinerary.transfers : 0} transfer${itinerary?.transfers === 1 ? '' : 's'}</span></div>${itinerary ? timeline(itinerary) : ''}</div></div>`;
+    const modeLabel = saved?.timeMode === 'arrive' ? 'Arrive by' : 'Leave at';
+    return `<div class="route-viewer"><div class="picker-topbar"><button class="picker-back" data-route-action="close-viewer">‹</button><div><div class="route-kicker">${escapeHtml(modeLabel)} ${escapeHtml(timeLabel(saved.departureTime))}</div><div class="picker-title">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div></div><div class="route-viewer-map-wrap"><div id="route-viewer-map" class="route-viewer-map"></div><div id="viewer-fallback" class="map-fallback" hidden><strong>Map unavailable</strong><span>The step-by-step route is still shown below.</span></div></div><div class="route-viewer-sheet"><div class="route-viewer-summary"><div><span class="route-card-label">Journey</span><strong>${itinerary ? durationLabel(itinerary.duration) : '—'}</strong></div><span>${itinerary ? itinerary.transfers : 0} transfer${itinerary?.transfers === 1 ? '' : 's'}</span></div>${itinerary ? timeline(itinerary) : ''}</div></div>`;
   }
 
   function destroyMap() {
@@ -492,9 +496,9 @@
 
   async function routeData() {
     routeState = { status: 'loading', data: null, error: '' }; render();
-    const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : '';
+    const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(saved.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
     try {
-      const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}`); const data = await response.json();
+      const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`); const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Routing unavailable.'); const itinerary = normalizeRoute(data); if (!itinerary) throw new Error('No public-transport itinerary.');
       routeState = { status: 'ready', data: itinerary, error: '' }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) render();
     } catch (error) { routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' }; render(); }
@@ -517,6 +521,7 @@
         else if (action === 'manual') manualLocation();
         else if (action === 'locate') locate();
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
         else if (action === 'viewer' && routeState.data) { viewing = true; render(); }
         else if (action === 'close-viewer') { viewing = false; render(); }

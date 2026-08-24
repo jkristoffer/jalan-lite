@@ -1,4 +1,4 @@
-const SHELL_CACHE='jalan-lite-shell-v8';
+const SHELL_CACHE='jalan-lite-shell-v9';
 const RUNTIME_CACHE='jalan-lite-runtime-v1';
 const SHELL_ASSETS=['/','/index.html','/styles.css','/route-shell.css','/app.js','/route-shell.js','/pwa.js','/mapbox-overrides.css','/map-polish.css','/mapbox-adapter.js','/manifest.webmanifest','/icons/icon-192.png','/icons/icon-512.png','/icons/icon-maskable-512.png','/icons/apple-touch-icon.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(SHELL_CACHE).then(cache=>cache.addAll(SHELL_ASSETS)).then(()=>self.skipWaiting()))});
