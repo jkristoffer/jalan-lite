@@ -136,6 +136,8 @@ module.exports = async function handler(req, res) {
   }
 };
 
+module.exports._shared = { loadStops, distanceMetres };
+
 module.exports._test = {
   isBusStopsPayload,
   buildStopCache,
