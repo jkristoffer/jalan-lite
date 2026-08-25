@@ -3,6 +3,12 @@ const trainSchedule = require('../train-schedule-source');
 
 const CONNECTOR_MIN_DISTANCE_METRES = 600;
 const CONNECTOR_MAX_DISTANCE_METRES = 3500;
+const BUS_ESTIMATE_MAX_DISTANCE_KM = 8;
+const BUS_ESTIMATE_MAX_STOPS = 20;
+const BUS_ESTIMATE_MINUTES_PER_KM = 3;
+const BUS_ESTIMATE_MINUTES_PER_STOP = 1.1;
+const STATION_ENTRY_BUFFER_MINUTES = 2;
+const WALKING_SPEED_METRES_PER_SECOND = 1.25;
 
 function captureResponse() {
   const result = { status: 200, body: null, headers: {} };
@@ -30,6 +36,43 @@ function usableBusCandidate(payload) {
 
 function railStationPoint(station) { return { lat: station.lat, lng: station.lng }; }
 function exactStation(station) { return [{ ...station, distanceMetres: 0 }]; }
+function shiftedClock(clock, minutes) {
+  return { ...clock, seconds: clock.seconds + Math.max(0, Math.round(Number(minutes) * 60 || 0)) };
+}
+
+function monitoredCatchable(candidate) {
+  const arrivals = candidate?.arrivals || candidate?.legs?.[0]?.arrivals || [];
+  const monitored = candidate?.monitored || candidate?.legs?.[0]?.monitored || [];
+  const catchable = Number(candidate?.catchableArrivalMinutes);
+  if (!Number.isFinite(catchable)) return false;
+  return arrivals.some((arrival, index) => Number.isFinite(arrival) && arrival === catchable && monitored[index] === true);
+}
+
+function estimateDirectBusToStation(candidate) {
+  if (!candidate || candidate.kind !== 'direct' || Number(candidate.transfers) !== 0 || candidate.legs?.length !== 1) return null;
+  if (!monitoredCatchable(candidate)) return null;
+  const leg = candidate.legs[0];
+  const distanceKm = Number(leg.routeDistanceKm ?? candidate.routeDistanceKm);
+  const rideStops = Number(leg.rideStops ?? candidate.rideStops);
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > BUS_ESTIMATE_MAX_DISTANCE_KM) return null;
+  if (!Number.isInteger(rideStops) || rideStops <= 0 || rideStops > BUS_ESTIMATE_MAX_STOPS) return null;
+  const busWaitMinutes = Number(candidate.catchableArrivalMinutes);
+  const busRideMinutes = Math.max(2, Math.ceil(Math.max(
+    distanceKm * BUS_ESTIMATE_MINUTES_PER_KM,
+    rideStops * BUS_ESTIMATE_MINUTES_PER_STOP,
+  )));
+  const stationWalkMetres = Math.max(0, Number(candidate.alight?.distanceMetres) || 0);
+  const stationWalkMinutes = Math.ceil(stationWalkMetres / WALKING_SPEED_METRES_PER_SECOND / 60);
+  const toStationMinutes = busWaitMinutes + busRideMinutes + stationWalkMinutes + STATION_ENTRY_BUFFER_MINUTES;
+  return {
+    confidence: 'bounded-estimate',
+    busWaitMinutes,
+    busRideMinutes,
+    stationWalkMinutes,
+    stationEntryBufferMinutes: STATION_ENTRY_BUFFER_MINUTES,
+    toStationMinutes,
+  };
+}
 
 function busLegs(candidate) {
   return (candidate?.legs || []).map((leg) => ({
@@ -46,17 +89,25 @@ function busLegs(candidate) {
   }));
 }
 
-function composeBusRail(bus, rail, station) {
+function composeBusRail(bus, rail, station, estimate = null) {
   if (!bus || !rail) return null;
+  const complete = Boolean(estimate && Number.isFinite(rail.estimatedTotalMinutes));
   return {
     kind: 'bus-rail',
-    timingStatus: 'partial',
-    rankable: false,
+    timingStatus: complete ? 'estimated' : 'partial',
+    rankable: complete,
     connectorStation: { id: station.id, name: station.name, lat: station.lat, lng: station.lng },
     transfers: (Number(bus.transfers) || 0) + rail.transfers + 1,
     totalWalkMetres: (Number(bus.totalWalkMetres) || 0) + (Number(rail.totalWalkMetres) || 0),
+    ...(complete ? {
+      catchableArrivalMinutes: bus.catchableArrivalMinutes,
+      estimatedTotalMinutes: estimate.toStationMinutes + rail.estimatedTotalMinutes,
+      busTimingEstimate: estimate,
+    } : {}),
     legs: [...busLegs(bus), ...rail.legs],
-    note: 'Bus travel time to the rail transfer is not yet modeled, so this path is topology-only and is not ranked.',
+    note: complete
+      ? 'Bus travel time uses a bounded estimate for a short direct live connector; rail timing is from the LTA GTFS Schedule.'
+      : 'Bus travel time to the rail transfer is not sufficiently bounded, so this path remains topology-only and is not ranked.',
   };
 }
 
@@ -99,8 +150,10 @@ module.exports = async function handler(req, res) {
     if (originConnector && originConnector.distanceMetres > CONNECTOR_MIN_DISTANCE_METRES) {
       const connectorBusResult = await runBusRoute(start, railStationPoint(originConnector)).catch(() => null);
       const connectorBus = usableBusCandidate(connectorBusResult?.body);
-      const railAfterBus = trainSchedule.railJourney(schedule, railStationPoint(originConnector), end, { clock, startStations: exactStation(originConnector) });
-      const combined = composeBusRail(connectorBus, railAfterBus, originConnector);
+      const estimate = estimateDirectBusToStation(connectorBus);
+      const railClock = estimate ? shiftedClock(clock, estimate.toStationMinutes) : clock;
+      const railAfterBus = trainSchedule.railJourney(schedule, railStationPoint(originConnector), end, { clock: railClock, startStations: exactStation(originConnector) });
+      const combined = composeBusRail(connectorBus, railAfterBus, originConnector, estimate);
       if (combined) intermodal.push(combined);
     }
 
@@ -114,13 +167,16 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  intermodal.sort((left, right) => Number(Boolean(right.rankable)) - Number(Boolean(left.rankable))
+    || (Number(left.estimatedTotalMinutes) || Number.POSITIVE_INFINITY) - (Number(right.estimatedTotalMinutes) || Number.POSITIVE_INFINITY));
+
   const busOk = busResult.status === 200 && busResult.body;
   if (!busOk && !rail && !intermodal.length) {
     return res.status(502).json({ error: 'LTA multimodal routing is temporarily unavailable.', busError: busResult.body?.error || null, railError: scheduleResult.error ? 'Train schedule unavailable.' : null });
   }
 
   return res.status(200).json({
-    engine: 'lta-realtime-multimodal-v1',
+    engine: 'lta-realtime-multimodal-v2',
     scope: 'live-bus-plus-scheduled-rail',
     bus: busOk ? busResult.body : { candidates: [], error: busResult.body?.error || 'Bus routing unavailable.' },
     rail: rail ? { candidate: rail, source: 'LTA GTFS Schedule (Train)' } : { candidate: null, reason: scheduleResult.error ? 'Train schedule unavailable.' : 'No scheduled rail journey connects nearby stations at this time.' },
@@ -128,11 +184,12 @@ module.exports = async function handler(req, res) {
     limitations: [
       'Rail routing uses the official LTA GTFS Schedule and supports scheduled MRT/LRT line transfers.',
       'Bus-only routing continues to use LTA BusRoutes and live BusArrival data.',
-      'Bus-to-rail and rail-to-bus paths are topology-only until bus in-vehicle travel time is modeled; they are not ranked against complete journeys.',
+      'Short direct live bus-to-rail connectors can use a bounded travel-time estimate and become rankable; long, transfer, or unmonitored connectors remain topology-only.',
+      'Rail-to-bus timing remains topology-only because future bus arrivals are not projected yet.',
       'Walking access and egress currently use straight-line distance.',
     ],
     updatedAt: new Date().toISOString(),
   });
 };
 
-module.exports._test = { captureResponse, usableBusCandidate, busLegs, composeBusRail, composeRailBus };
+module.exports._test = { captureResponse, usableBusCandidate, shiftedClock, monitoredCatchable, estimateDirectBusToStation, busLegs, composeBusRail, composeRailBus };
