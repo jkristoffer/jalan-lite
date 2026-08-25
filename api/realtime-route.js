@@ -11,6 +11,7 @@ const ROUTE_LOAD_TIMEOUT_MS = 15000;
 const SEARCH_RADIUS_METRES = 600;
 const MAX_NEARBY_STOPS = 6;
 const MAX_STATIC_CANDIDATES = 24;
+const MAX_TRANSFER_CANDIDATES = 72;
 const MAX_RESULTS = 8;
 const WALKING_SPEED_METRES_PER_SECOND = 1.25;
 
@@ -143,6 +144,37 @@ function nearby(stopRows, point, radius = SEARCH_RADIUS_METRES, limit = MAX_NEAR
     .slice(0, limit);
 }
 
+function normalizedRouteRow(row) {
+  return {
+    serviceNo: String(row.ServiceNo).trim(),
+    operator: String(row.Operator || ''),
+    direction: Number(row.Direction),
+    sequence: Number(row.StopSequence),
+    stopCode: String(row.BusStopCode),
+    distanceKm: Number(row.Distance),
+  };
+}
+
+function routePatterns(routeRows) {
+  const patterns = new Map();
+  routeRows.forEach((row) => {
+    const normalized = normalizedRouteRow(row);
+    const key = `${normalized.serviceNo}|${normalized.direction}`;
+    if (!patterns.has(key)) {
+      patterns.set(key, {
+        key,
+        serviceNo: normalized.serviceNo,
+        operator: normalized.operator,
+        direction: normalized.direction,
+        stops: [],
+      });
+    }
+    patterns.get(key).stops.push(normalized);
+  });
+  patterns.forEach((pattern) => pattern.stops.sort((left, right) => left.sequence - right.sequence));
+  return patterns;
+}
+
 function directCandidates(routeRows, originStops, destinationStops) {
   const origins = new Map(originStops.map((stop) => [stop.stopCode, stop]));
   const destinations = new Map(destinationStops.map((stop) => [stop.stopCode, stop]));
@@ -154,13 +186,7 @@ function directCandidates(routeRows, originStops, destinationStops) {
     const key = `${String(row.ServiceNo).trim()}|${Number(row.Direction)}`;
     if (!services.has(key)) services.set(key, { boards: [], alights: [] });
     const service = services.get(key);
-    const normalized = {
-      serviceNo: String(row.ServiceNo).trim(),
-      operator: String(row.Operator || ''),
-      direction: Number(row.Direction),
-      sequence: Number(row.StopSequence),
-      distanceKm: Number(row.Distance),
-    };
+    const normalized = normalizedRouteRow(row);
     if (origins.has(stopCode)) service.boards.push({ ...normalized, stop: origins.get(stopCode) });
     if (destinations.has(stopCode)) service.alights.push({ ...normalized, stop: destinations.get(stopCode) });
   });
@@ -172,15 +198,27 @@ function directCandidates(routeRows, originStops, destinationStops) {
         if (alight.sequence <= board.sequence) return;
         const routeDistanceKm = alight.distanceKm - board.distanceKm;
         if (!Number.isFinite(routeDistanceKm) || routeDistanceKm <= 0) return;
+        const rideStops = alight.sequence - board.sequence;
         candidates.push({
+          kind: 'direct',
+          transfers: 0,
           serviceNo: board.serviceNo,
           operator: board.operator,
           direction: board.direction,
           board: board.stop,
           alight: alight.stop,
-          rideStops: alight.sequence - board.sequence,
+          rideStops,
           routeDistanceKm: Number(routeDistanceKm.toFixed(2)),
           totalWalkMetres: board.stop.distanceMetres + alight.stop.distanceMetres,
+          legs: [{
+            serviceNo: board.serviceNo,
+            operator: board.operator,
+            direction: board.direction,
+            boardStopCode: board.stop.stopCode,
+            alightStopCode: alight.stop.stopCode,
+            rideStops,
+            routeDistanceKm: Number(routeDistanceKm.toFixed(2)),
+          }],
         });
       });
     });
@@ -191,6 +229,106 @@ function directCandidates(routeRows, originStops, destinationStops) {
       || left.routeDistanceKm - right.routeDistanceKm
       || left.rideStops - right.rideStops)
     .slice(0, MAX_STATIC_CANDIDATES);
+}
+
+function oneTransferCandidates(routeRows, originStops, destinationStops) {
+  const origins = new Map(originStops.map((stop) => [stop.stopCode, stop]));
+  const destinations = new Map(destinationStops.map((stop) => [stop.stopCode, stop]));
+  const patterns = routePatterns(routeRows);
+  const boards = [];
+  const alights = [];
+
+  patterns.forEach((pattern) => {
+    pattern.stops.forEach((row, index) => {
+      if (origins.has(row.stopCode)) boards.push({ pattern, index, row, stop: origins.get(row.stopCode) });
+      if (destinations.has(row.stopCode)) alights.push({ pattern, index, row, stop: destinations.get(row.stopCode) });
+    });
+  });
+
+  const candidates = [];
+  const seen = new Set();
+
+  boards.forEach((board) => {
+    alights.forEach((alight) => {
+      if (board.pattern.key === alight.pattern.key) return;
+      if (board.pattern.serviceNo === alight.pattern.serviceNo) return;
+      if (board.index >= board.pattern.stops.length - 1 || alight.index <= 0) return;
+
+      const secondBeforeAlight = new Map();
+      for (let secondIndex = 0; secondIndex < alight.index; secondIndex += 1) {
+        const stopCode = alight.pattern.stops[secondIndex].stopCode;
+        if (!secondBeforeAlight.has(stopCode)) secondBeforeAlight.set(stopCode, []);
+        secondBeforeAlight.get(stopCode).push(secondIndex);
+      }
+
+      for (let firstIndex = board.index + 1; firstIndex < board.pattern.stops.length; firstIndex += 1) {
+        const firstTransfer = board.pattern.stops[firstIndex];
+        const secondIndexes = secondBeforeAlight.get(firstTransfer.stopCode);
+        if (!secondIndexes) continue;
+
+        secondIndexes.forEach((secondIndex) => {
+          const secondTransfer = alight.pattern.stops[secondIndex];
+          const firstDistanceKm = firstTransfer.distanceKm - board.row.distanceKm;
+          const secondDistanceKm = alight.row.distanceKm - secondTransfer.distanceKm;
+          if (!Number.isFinite(firstDistanceKm) || !Number.isFinite(secondDistanceKm) || firstDistanceKm <= 0 || secondDistanceKm <= 0) return;
+
+          const signature = [
+            board.pattern.key,
+            board.stop.stopCode,
+            firstTransfer.stopCode,
+            alight.pattern.key,
+            alight.stop.stopCode,
+          ].join('|');
+          if (seen.has(signature)) return;
+          seen.add(signature);
+
+          const firstRideStops = firstTransfer.sequence - board.row.sequence;
+          const secondRideStops = alight.row.sequence - secondTransfer.sequence;
+          const routeDistanceKm = firstDistanceKm + secondDistanceKm;
+          candidates.push({
+            kind: 'transfer',
+            transfers: 1,
+            serviceNo: board.pattern.serviceNo,
+            secondServiceNo: alight.pattern.serviceNo,
+            operator: board.pattern.operator,
+            direction: board.pattern.direction,
+            board: board.stop,
+            alight: alight.stop,
+            transfer: { stopCode: firstTransfer.stopCode },
+            rideStops: firstRideStops + secondRideStops,
+            routeDistanceKm: Number(routeDistanceKm.toFixed(2)),
+            totalWalkMetres: board.stop.distanceMetres + alight.stop.distanceMetres,
+            legs: [
+              {
+                serviceNo: board.pattern.serviceNo,
+                operator: board.pattern.operator,
+                direction: board.pattern.direction,
+                boardStopCode: board.stop.stopCode,
+                alightStopCode: firstTransfer.stopCode,
+                rideStops: firstRideStops,
+                routeDistanceKm: Number(firstDistanceKm.toFixed(2)),
+              },
+              {
+                serviceNo: alight.pattern.serviceNo,
+                operator: alight.pattern.operator,
+                direction: alight.pattern.direction,
+                boardStopCode: secondTransfer.stopCode,
+                alightStopCode: alight.stop.stopCode,
+                rideStops: secondRideStops,
+                routeDistanceKm: Number(secondDistanceKm.toFixed(2)),
+              },
+            ],
+          });
+        });
+      }
+    });
+  });
+
+  return candidates
+    .sort((left, right) => left.totalWalkMetres - right.totalWalkMetres
+      || left.routeDistanceKm - right.routeDistanceKm
+      || left.rideStops - right.rideStops)
+    .slice(0, MAX_TRANSFER_CANDIDATES);
 }
 
 function minutesUntil(value, now = Date.now()) {
@@ -263,6 +401,7 @@ function rankCandidates(candidates) {
       const leftLive = Number.isFinite(left.catchableArrivalMinutes) ? left.catchableArrivalMinutes : Number.POSITIVE_INFINITY;
       const rightLive = Number.isFinite(right.catchableArrivalMinutes) ? right.catchableArrivalMinutes : Number.POSITIVE_INFINITY;
       return leftLive - rightLive
+        || (Number(left.transfers) || 0) - (Number(right.transfers) || 0)
         || left.totalWalkMetres - right.totalWalkMetres
         || left.routeDistanceKm - right.routeDistanceKm
         || left.rideStops - right.rideStops;
@@ -289,20 +428,22 @@ module.exports = async function handler(req, res) {
     const destinationStops = nearby(stopRows, end);
     if (!originStops.length || !destinationStops.length) {
       return res.status(200).json({
-        engine: 'lta-realtime-direct-bus-v1',
-        scope: 'direct-bus',
+        engine: 'lta-realtime-bus-v2',
+        scope: 'bus-up-to-one-transfer',
         candidates: [],
         reason: 'No nearby LTA bus stops were found within 600 metres of one or both endpoints.',
       });
     }
 
-    const candidates = directCandidates(routeRows, originStops, destinationStops);
+    const direct = directCandidates(routeRows, originStops, destinationStops);
+    const transfers = oneTransferCandidates(routeRows, originStops, destinationStops);
+    const candidates = [...direct, ...transfers];
     if (!candidates.length) {
       return res.status(200).json({
-        engine: 'lta-realtime-direct-bus-v1',
-        scope: 'direct-bus',
+        engine: 'lta-realtime-bus-v2',
+        scope: 'bus-up-to-one-transfer',
         candidates: [],
-        reason: 'No direct bus service connects the nearby origin and destination stops.',
+        reason: 'No direct or one-transfer bus journey connects the nearby origin and destination stops.',
       });
     }
 
@@ -314,14 +455,14 @@ module.exports = async function handler(req, res) {
     }
 
     return res.status(200).json({
-      engine: 'lta-realtime-direct-bus-v1',
-      scope: 'direct-bus',
+      engine: 'lta-realtime-bus-v2',
+      scope: 'bus-up-to-one-transfer',
       candidates: rankCandidates(candidates),
       nearby: { origin: originStops, destination: destinationStops },
       limitations: [
-        'Direct buses only; transfers and MRT/LRT are not routed yet.',
+        'Bus journeys support direct routes and one transfer; MRT/LRT are not routed yet.',
         'Access and egress distances are straight-line approximations.',
-        'Live arrivals determine catchability, but in-vehicle travel time is not estimated yet.',
+        'Live arrivals determine first-bus catchability, but second-leg transfer timing and in-vehicle travel time are not estimated yet.',
       ],
       updatedAt: new Date().toISOString(),
     });
@@ -335,6 +476,7 @@ module.exports._test = {
   isBusRoutesPayload,
   parsePoint,
   directCandidates,
+  oneTransferCandidates,
   accessWalkMinutes,
   catchableArrival,
   rankCandidates,
