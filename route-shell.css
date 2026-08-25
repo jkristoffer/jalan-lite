@@ -353,3 +353,28 @@
     font-size: 18px;
   }
 }
+
+
+/* Scheduled commute state */
+.dashboard-mode .journey-hero-state-planning {
+  border-top-color: var(--line,#DFDDD7);
+  background: transparent;
+}
+.dashboard-mode .journey-hero-state-planning .now-countdown {
+  color: var(--ink,#16181A);
+}
+.dashboard-mode .journey-hero-state-planning .now-planning-relative {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted,#6E7377);
+  font: 500 11px 'IBM Plex Mono',monospace;
+  letter-spacing: .01em;
+}
+.dashboard-mode .now-planning-relative[hidden] {
+  display: none !important;
+}
+.dashboard-mode .journey-hero-state-planning .journey-temporal-confidence {
+  border-color: var(--edge,#C9C6BF);
+  background: transparent;
+  color: var(--muted,#6E7377);
+}
