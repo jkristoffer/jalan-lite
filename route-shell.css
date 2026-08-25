@@ -211,3 +211,7 @@
   width: 100%;
   border-top: 0;
 }
+
+.dashboard-mode .dashboard-pane > * {
+  margin-top: 0;
+}
