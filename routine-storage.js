@@ -129,6 +129,7 @@
       id: `bus:${id}`,
       type: 'bus',
       name: asText(source.name) || 'Bus commute',
+      homeWorkLabel: source.homeWorkLabel,
       schedule: {
         days: normalizeDays(source.days),
         startTime: source.startTime,
@@ -147,7 +148,7 @@
     const id = routine.legacy?.key === STORAGE_KEYS.presets && routine.legacy.id
       ? routine.legacy.id
       : routine.id.replace(/^bus:/, '') || routine.id;
-    return {
+    const preset = {
       id,
       name: routine.name,
       stopCode: routine.bus.stopCode,
@@ -157,6 +158,11 @@
       startTime: routine.schedule.startTime || '07:30',
       endTime: routine.schedule.endTime || '09:00',
     };
+    if (routine.homeWorkLabel) preset.homeWorkLabel = routine.homeWorkLabel;
+    if (routine.notifications.disruptionAlerts || routine.notifications.routeAlerts) {
+      preset.notifications = { ...routine.notifications };
+    }
+    return preset;
   }
 
   function routineFromRoute(value) {
@@ -168,6 +174,7 @@
       id: `route:${id}`,
       type: 'route',
       name: asText(source.name) || 'Saved commute',
+      homeWorkLabel: source.homeWorkLabel,
       schedule: {
         departureTime: source.departureTime,
         timeMode: source.timeMode,
@@ -184,13 +191,18 @@
     const id = routine.legacy?.key === STORAGE_KEYS.routes && routine.legacy.id
       ? routine.legacy.id
       : routine.id.replace(/^route:/, '') || routine.id;
-    return {
+    const route = {
       id,
       name: routine.name,
       ...routine.route,
       departureTime: routine.schedule.departureTime || '08:30',
       timeMode: routine.schedule.timeMode,
     };
+    if (routine.homeWorkLabel) route.homeWorkLabel = routine.homeWorkLabel;
+    if (routine.notifications.disruptionAlerts || routine.notifications.routeAlerts) {
+      route.notifications = { ...routine.notifications };
+    }
+    return route;
   }
 
   function createEnvelope(routines = []) {

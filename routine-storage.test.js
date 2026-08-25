@@ -169,6 +169,27 @@ test('converts unified routines back to the existing bus and route record shapes
   });
 });
 
+test('preserves optional Home/Work labels and alert preferences', () => {
+  const routeRoutine = routines.routineFromRoute({
+    ...savedRoute,
+    name: 'Home to Work',
+    homeWorkLabel: 'work',
+    notifications: { disruptionAlerts: true, routeAlerts: false },
+  });
+  const busRoutine = routines.routineFromBusPreset({
+    ...busPreset,
+    homeWorkLabel: 'home',
+    notifications: { disruptionAlerts: true, routeAlerts: true },
+  });
+
+  assert.equal(routeRoutine.homeWorkLabel, 'work');
+  assert.deepEqual(routeRoutine.notifications, { disruptionAlerts: true, routeAlerts: false });
+  assert.equal(routines.routeFromRoutine(routeRoutine).homeWorkLabel, 'work');
+  assert.deepEqual(routines.routeFromRoutine(routeRoutine).notifications, { disruptionAlerts: true, routeAlerts: false });
+  assert.equal(routines.busPresetFromRoutine(busRoutine).homeWorkLabel, 'home');
+  assert.deepEqual(routines.busPresetFromRoutine(busRoutine).notifications, { disruptionAlerts: true, routeAlerts: true });
+});
+
 test('returns a safe empty envelope when storage is unavailable', () => {
   const result = routines.load(null);
   const saved = routines.save([], null);

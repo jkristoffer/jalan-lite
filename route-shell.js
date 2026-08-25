@@ -84,8 +84,19 @@
     return new Intl.DateTimeFormat('en-SG', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(date);
   }
 
+  function newRouteId() {
+    return 'route-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
   function draft(value) {
     return {
+      id: value?.id || null,
+      name: value?.name || '',
+      homeWorkLabel: ['home', 'work'].includes(value?.homeWorkLabel) ? value.homeWorkLabel : null,
+      notifications: {
+        disruptionAlerts: Boolean(value?.notifications?.disruptionAlerts),
+        routeAlerts: Boolean(value?.notifications?.routeAlerts),
+      },
       origin: value?.origin || '',
       destination: value?.destination || '',
       originPoint: value?.originPoint || null,
@@ -104,6 +115,22 @@
     }
   }
 
+  function routeRoutineId(value) {
+    return value?.id ? 'route:' + value.id : '';
+  }
+
+  function syncLegacyRoute(routines) {
+    const routine = routines.find((value) => value.type === 'route');
+    if (!routine) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    const route = routineStorage.routeFromRoutine(routine);
+    if (!route) return null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(route));
+    return route;
+  }
+
   function load() {
     if (!routineStorage) return legacyLoad();
     const loaded = routineStorage.load();
@@ -118,14 +145,22 @@
     if (!routineStorage) return;
     const loaded = routineStorage.load();
     const routeRoutine = routineStorage.routineFromRoute(value);
-    if (routeRoutine) routineStorage.save([...loaded.routines.filter((routine) => routine.type !== 'route'), routeRoutine]);
+    if (routeRoutine) {
+      const next = [routeRoutine, ...loaded.routines.filter((routine) => routine.id !== routeRoutine.id)];
+      routineStorage.save(next);
+    }
   }
 
   function clearSavedRoute() {
     localStorage.removeItem(STORAGE_KEY);
     if (!routineStorage) return;
     const loaded = routineStorage.load();
-    routineStorage.save(loaded.routines.filter((routine) => routine.type !== 'route'));
+    const activeId = routeRoutineId(saved);
+    const next = activeId
+      ? loaded.routines.filter((routine) => routine.id !== activeId)
+      : loaded.routines.filter((routine) => routine.type !== 'route');
+    routineStorage.save(next);
+    return syncLegacyRoute(next);
   }
 
   function brand() {
@@ -168,23 +203,36 @@
     const extra = isRoute
       ? routineSchedule(routine)
       : `${routine.bus.services.join(' · ')} · ${routineSchedule(routine)}`;
+    const label = routine.homeWorkLabel === 'home' ? 'Home' : routine.homeWorkLabel === 'work' ? 'Work' : '';
+    const labelMarkup = label ? '<span class="routine-home-work">' + label + '</span>' : '';
+    const alertMarkup = routine.notifications?.disruptionAlerts || routine.notifications?.routeAlerts
+      ? '<span class="routine-alert-preference">Alerts saved</span>'
+      : '';
     const busId = routine.legacy?.key === routineStorage?.STORAGE_KEYS.presets ? routine.legacy.id : routine.id.replace(/^bus:/, '');
-    return `<article class="routine-item ${isRoute ? 'routine-item-route' : 'routine-item-bus'}">
-      <div class="routine-item-top"><span class="routine-kind ${isRoute ? 'route' : 'bus'}">${isRoute ? 'ROUTE' : 'BUS'}</span><span class="routine-item-schedule">${escapeHtml(routineSchedule(routine))}</span></div>
-      <h2>${escapeHtml(routine.name)}</h2>
-      <p>${escapeHtml(detail)}</p>
-      <div class="routine-item-extra">${escapeHtml(extra)}</div>
-      <div class="routine-item-actions"><button type="button" class="routine-action-primary" data-route-action="open-routine" data-routine-id="${escapeHtml(isRoute ? routine.id : busId)}">${isRoute ? 'Open commute' : 'Open bus arrivals'}</button><button type="button" class="routine-action-secondary" data-route-action="edit-routine" data-routine-id="${escapeHtml(isRoute ? routine.id : busId)}">Edit</button><button type="button" class="routine-action-remove" data-route-action="remove-routine" data-routine-id="${escapeHtml(isRoute ? routine.id : busId)}" data-routine-label="${escapeHtml(routine.name)}">Remove</button></div>
-    </article>`;
+    const routineId = escapeHtml(isRoute ? routine.id : busId);
+    return '<article class="routine-item ' + (isRoute ? 'routine-item-route' : 'routine-item-bus') + '">' +
+      '<div class="routine-item-top"><div class="routine-item-tags"><span class="routine-kind ' + (isRoute ? 'route' : 'bus') + '">' + (isRoute ? 'ROUTE' : 'BUS') + '</span>' + labelMarkup + alertMarkup + '</div><span class="routine-item-schedule">' + escapeHtml(routineSchedule(routine)) + '</span></div>' +
+      '<h2>' + escapeHtml(routine.name) + '</h2>' +
+      '<p>' + escapeHtml(detail) + '</p>' +
+      '<div class="routine-item-extra">' + escapeHtml(extra) + '</div>' +
+      '<div class="routine-item-actions"><button type="button" class="routine-action-primary" data-route-action="open-routine" data-routine-id="' + routineId + '">' + (isRoute ? 'Open commute' : 'Open bus arrivals') + '</button><button type="button" class="routine-action-secondary" data-route-action="edit-routine" data-routine-id="' + routineId + '">Edit</button><button type="button" class="routine-action-remove" data-route-action="remove-routine" data-routine-id="' + routineId + '" data-routine-label="' + escapeHtml(routine.name) + '">Remove</button></div>' +
+      '</article>';
   }
 
   function routinesView() {
     const routines = routineRecords();
-    return `<div class="route-panel routines-mode">
-      <div class="routine-library-header"><button type="button" class="routine-back" aria-label="Back to commute" data-route-action="close-routines">‹</button><div><div class="route-kicker">DailyLoop</div><h1>Routines</h1></div></div>
-      <p class="routine-library-intro">Your saved journeys and bus checks, together in one place.</p>
-      ${routines.length ? `<div class="routine-list" aria-label="Saved routines">${routines.map(routineItem).join('')}</div>` : '<div class="routine-empty"><span class="routine-empty-mark">◎</span><h2>No routines yet</h2><p>Save a route or bus commute and it will appear here.</p><button type="button" class="route-primary" data-route-action="new-route">Plan a route</button><button type="button" class="route-link" data-route-action="bus">Open bus arrivals</button></div>'}
-    </div>`;
+    const actions = routines.length
+      ? '<div class="routine-library-actions"><button type="button" class="route-primary" data-route-action="new-route">Plan a route</button><button type="button" class="route-link" data-route-action="bus">Save bus-only routine</button></div>'
+      : '';
+    const content = routines.length
+      ? '<div class="routine-list" aria-label="Saved routines">' + routines.map(routineItem).join('') + '</div>'
+      : '<div class="routine-empty"><span class="routine-empty-mark">◎</span><h2>No routines yet</h2><p>Save a route or bus commute and it will appear here.</p><button type="button" class="route-primary" data-route-action="new-route">Plan a route</button><button type="button" class="route-link" data-route-action="bus">Open bus arrivals</button></div>';
+    return '<div class="route-panel routines-mode">' +
+      '<div class="routine-library-header"><button type="button" class="routine-back" aria-label="Back to commute" data-route-action="close-routines">‹</button><div><div class="route-kicker">DailyLoop</div><h1>Routines</h1></div></div>' +
+      '<p class="routine-library-intro">Your saved journeys and bus checks, together in one place.</p>' +
+      actions +
+      content +
+      '</div>';
   }
 
   function routineById(id) {
@@ -220,7 +268,7 @@
     cancelAsyncWork();
     dashboardPane = 'now';
     saved = null;
-    draftState = draft();
+    draftState = draft({ id: newRouteId(), name: 'New commute' });
     routeState = { status: 'idle', data: null, error: '' };
     routinesOpen = false;
     render();
@@ -235,7 +283,9 @@
       openBusView(busId);
       return;
     }
-    saved = routineStorage.routeFromRoutine(routine);
+    const ordered = [routine, ...routineRecords().filter((value) => value.id !== routine.id)];
+    routineStorage.save(ordered);
+    saved = syncLegacyRoute(ordered) || routineStorage.routeFromRoutine(routine);
     draftState = draft(saved);
     dashboardPane = 'now';
     routeState = { status: 'idle', data: null, error: '' };
@@ -272,18 +322,25 @@
     if (routine.type === 'bus') mirrorBusLegacyKey(next);
     else {
       const remainingRoute = next.find((value) => value.type === 'route');
-      if (remainingRoute) {
-        const legacyRoute = routineStorage.routeFromRoutine(remainingRoute);
-        if (remainingRoute.updatedAt) legacyRoute.updatedAt = remainingRoute.updatedAt;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(legacyRoute));
-      } else localStorage.removeItem(STORAGE_KEY);
-      saved = null;
-      draftState = draft();
-      routeState = { status: 'idle', data: null, error: '' };
+      const removingActive = routeRoutineId(saved) === routine.id;
+      syncLegacyRoute(next);
+      if (removingActive) {
+        saved = remainingRoute ? routineStorage.routeFromRoutine(remainingRoute) : null;
+        draftState = draft(saved);
+        routeState = { status: 'idle', data: null, error: '' };
+      }
     }
     window.JalanBus?.sync();
     routinesOpen = true;
     render();
+  }
+
+  function routineMetaFields() {
+    const label = draftState.homeWorkLabel || '';
+    return '<div class="routine-meta-fields">' +
+      '<label class="routine-meta-field"><span class="route-field-label">Routine name</span><input id="route-routine-name" class="routine-meta-input" value="' + escapeHtml(draftState.name) + '" placeholder="e.g. Home to Work"></label>' +
+      '<label class="routine-meta-field"><span class="route-field-label">Location label</span><select id="route-home-work" class="routine-meta-select"><option value=""' + (!label ? ' selected' : '') + '>No label</option><option value="home"' + (label === 'home' ? ' selected' : '') + '>Home</option><option value="work"' + (label === 'work' ? ' selected' : '') + '>Work</option></select></label>' +
+      '</div>';
   }
 
   function setup() {
@@ -298,6 +355,7 @@
       <div class="route-setup-copy"><div class="route-kicker">Bus + MRT · Singapore</div><h1>Where are you going?</h1><p>Set a start and destination to see your public-transport journey.</p>${network()}</div>
       <div class="route-form">
         <div class="route-input-card">${locationRow('origin', 'From', 'Choose where you start', 'origin')}${locationRow('destination', 'To', 'Choose where you’re going', 'destination')}</div>
+        ${routineMetaFields()}
         <div class="route-time-mode" role="group" aria-label="Journey time preference"><button type="button" class="route-time-mode-button${draftState.timeMode === 'depart' ? ' selected' : ''}" data-route-action="time-mode" data-time-mode="depart">Leave at</button><button type="button" class="route-time-mode-button${draftState.timeMode === 'arrive' ? ' selected' : ''}" data-route-action="time-mode" data-time-mode="arrive">Arrive by</button></div>
         <label class="route-time-field"><span><span class="route-field-label">${draftState.timeMode === 'arrive' ? 'Arrive by' : 'Leave at'}</span><small>Used to calculate the commute timetable</small></span><input id="route-time-input" type="time" value="${escapeHtml(draftState.departureTime || '08:30')}" step="300"></label>
         <button class="route-primary" data-route-action="save" ${draftState.origin && draftState.destination ? '' : 'disabled'}>${saved ? 'Save changes' : 'Plan this commute'}</button>
@@ -1703,6 +1761,8 @@
     const input = document.getElementById('picker-manual-input'); const useButton = shell.querySelector('[data-route-action="manual"]');
     if (input) { input.oninput = () => { useButton.disabled = !input.value.trim(); }; input.onkeydown = (event) => { if (event.key === 'Enter') manualLocation(); }; }
     const timeInput = document.getElementById('route-time-input'); if (timeInput) timeInput.oninput = () => { draftState.departureTime = timeInput.value || '08:30'; };
+    const routineNameInput = document.getElementById('route-routine-name'); if (routineNameInput) routineNameInput.oninput = () => { draftState.name = routineNameInput.value; };
+    const homeWorkInput = document.getElementById('route-home-work'); if (homeWorkInput) homeWorkInput.onchange = () => { draftState.homeWorkLabel = homeWorkInput.value || null; };
     shell.querySelectorAll('[data-route-action]').forEach((button) => {
       button.onclick = () => {
         const action = button.dataset.routeAction;
@@ -1719,8 +1779,8 @@
         else if (action === 'new-route') startNewRoute();
         else if (action === 'bus') openBusView();
         else if (action === 'edit') beginRouteEdit();
-        else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); dashboardPane = 'now'; routeState = { status: 'idle', data: null, error: '' }; render(); } }
-        else if (action === 'clear') { cancelAsyncWork(); dashboardPane = 'now'; clearSavedRoute(); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
+        else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ ...draftState, id: draftState.id || newRouteId(), name: draftState.name.trim() || 'Saved commute', updatedAt: new Date().toISOString() }); dashboardPane = 'now'; routeState = { status: 'idle', data: null, error: '' }; render(); } }
+        else if (action === 'clear') { cancelAsyncWork(); dashboardPane = 'now'; const replacement = clearSavedRoute(); saved = replacement; draftState = draft(replacement); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
         else if (action === 'cancel') closePicker();
         else if (action === 'confirm') { draftState[pickerField] = mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label; draftState[`${pickerField}Point`] = { ...mapPosition.center }; closePicker(); }
         else if (action === 'manual') manualLocation();

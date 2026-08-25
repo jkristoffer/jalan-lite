@@ -598,3 +598,23 @@
   .live-leg-bottom{align-items:flex-start;flex-direction:column;gap:5px}
   .live-leg-bottom .leg-live{justify-content:flex-start}
 }
+
+/* Saved routines: keep optional metadata visible without adding card chrome */
+.routine-library-actions{display:flex;align-items:center;gap:10px;margin-top:18px;padding-bottom:16px;border-bottom:1px solid var(--soft-grey,#DFE5E1)}
+.routine-library-actions .route-primary{width:auto;height:44px;margin-top:0;padding:0 16px;font-size:13px}
+.routine-library-actions .route-link{min-height:42px;padding:8px 4px}
+.routine-item-tags{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+.routine-home-work,.routine-alert-preference{display:inline-flex;align-items:center;min-height:22px;padding:0 8px;border:1px solid var(--edge,#BCC2B9);border-radius:999px;color:var(--charcoal,#596262);font:700 9px 'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase}
+.routine-home-work{border-color:rgba(89,146,196,.34);background:rgba(89,146,196,.08);color:var(--sky-blue,#5992C4)}
+.routine-alert-preference{border-color:rgba(230,150,65,.42);background:rgba(230,150,65,.08);color:var(--mandarin,#E69641)}
+.routine-meta-fields{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(120px,.75fr);gap:12px;margin-top:16px}
+.routine-meta-field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.routine-meta-input,.routine-meta-select{width:100%;height:44px;border:0;border-bottom:1px solid var(--edge,#BCC2B9);border-radius:0;background:transparent;color:var(--deep-navy,#101725);font:500 15px 'Barlow',sans-serif}
+.routine-meta-input{padding:0 0 4px}
+.routine-meta-select{padding:0 24px 0 0}
+.routine-meta-input:focus,.routine-meta-select:focus{border-bottom-color:var(--sky-blue,#5992C4);outline:0}
+@media(max-width:430px){
+  .routine-library-actions{align-items:flex-start;flex-direction:column}
+  .routine-library-actions .route-primary,.routine-library-actions .route-link{width:100%;justify-content:center}
+  .routine-meta-fields{grid-template-columns:1fr}
+}
