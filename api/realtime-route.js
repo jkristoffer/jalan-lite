@@ -570,6 +570,14 @@ module.exports = async function handler(req, res) {
         safeUpstreamFailure(error);
       }
     }
+    if (!includeSchedule) {
+      candidates.forEach((candidate) => {
+        (candidate.legs || []).forEach((leg) => {
+          delete leg.operatingWindow;
+          delete leg.serviceSchedule;
+        });
+      });
+    }
 
     const response = {
       engine: 'lta-realtime-bus-v2',
