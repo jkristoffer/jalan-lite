@@ -149,7 +149,18 @@
     const arriveBy = !currentRoute && saved?.timeMode === 'arrive';
     const requested = currentRoute ? (itinerary.service === 'next' ? 'Next available' : 'Now') : timeLabel(saved?.departureTime || draftState.departureTime);
     const leftLabel = currentRoute ? (itinerary.service === 'next' ? 'Next departure' : 'Leave now') : (arriveBy ? 'Arrive by' : 'Leave at');
-    return '<div class="journey-hero-route"><div class="journey-hero-location"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">' + escapeHtml(saved.origin) + '</div></div></div><div class="journey-hero-location"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">' + escapeHtml(saved.destination) + '</div></div></div><div class="journey-time-grid"><div><span class="route-field-label">' + leftLabel + '</span><strong>' + escapeHtml(arriveBy ? requested : (currentRoute ? departure : departure)) + '</strong></div><div><span class="route-field-label">' + (arriveBy ? 'Expected departure' : 'Expected arrival') + '</span><strong>' + escapeHtml(arriveBy ? (departure || '—') : (arrival || '—')) + '</strong></div></div></div>';
+    const leftValue = arriveBy ? requested : departure;
+    const rightLabel = arriveBy ? 'Expected departure' : 'Expected arrival';
+    const rightValue = arriveBy ? (departure || '—') : (arrival || '—');
+    const routeMeta = itinerary ? durationLabel(itinerary.duration) + ' · ' + itinerary.transfers + ' transfer' + (itinerary.transfers === 1 ? '' : 's') : '';
+    const routeStatus = currentRoute ? (itinerary.service === 'next' ? 'next available' : 'live timing') : 'planned';
+    return '<div class="journey-hero-route">' +
+      '<div class="now-route-header"><span class="route-card-label">YOUR JOURNEY</span><span class="now-route-status">' + escapeHtml(routeStatus) + '</span></div>' +
+      '<div class="journey-hero-location"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">' + escapeHtml(saved.origin) + '</div></div></div>' +
+      '<div class="journey-hero-location"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">' + escapeHtml(saved.destination) + '</div></div></div>' +
+      '<div class="now-route-time"><div><span class="route-field-label">' + escapeHtml(leftLabel) + '</span><strong>' + escapeHtml(leftValue || '—') + '</strong></div><span class="now-route-time-arrow" aria-hidden="true">→</span><div><span class="route-field-label">' + escapeHtml(rightLabel) + '</span><strong>' + escapeHtml(rightValue) + '</strong></div></div>' +
+      (routeMeta ? '<div class="now-route-meta">' + escapeHtml(routeMeta) + '</div>' : '') +
+      '</div>';
   }
 
   function journeyHero() {
@@ -157,7 +168,7 @@
     const focusButton = routeState.data
       ? `<button id='journey-hero-focus' class='focus-launch-button journey-hero-focus' data-route-action='focus'${state.isStale || routeState.status === 'rerouting' ? ' hidden' : ''}>Focus mode</button>`
       : '';
-    return '<section class="journey-hero">' + journey() + temporalCard() + focusButton + '</section>';
+    return '<section class="journey-hero">' + temporalCard() + journey() + focusButton + '</section>';
   }
 
   function timing(leg) {
@@ -483,16 +494,18 @@
 
   function temporalCard() {
     const state = journeyTemporalState();
+    const countdown = temporalCountdownLabel(state) || '—';
     if (state.phase === 'loading') {
       const failure = routeState.status === 'error';
       const detail = failure ? routeState.error : 'Checking Singapore public transport.';
-      return `<div id='journey-hero-state' class='journey-hero-state journey-hero-state-loading' role='status'><div class='journey-hero-state-top'><div><div class='route-card-label'>${failure ? 'ROUTE UNAVAILABLE' : 'PLANNING'}</div><strong id='journey-temporal-countdown'>—</strong></div><span id='journey-temporal-confidence' class='journey-temporal-confidence' hidden></span></div><h2 id='journey-temporal-action'>${failure ? 'Route unavailable' : 'Finding your route…'}</h2><p id='journey-temporal-detail'>${escapeHtml(detail)}</p></div>`;
+      return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-loading" role="status"><div class="now-state-top"><div><div class="route-card-label">' + (failure ? 'ROUTE UNAVAILABLE' : 'PLANNING') + '</div><strong id="journey-temporal-countdown" class="now-countdown">—</strong></div><span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span></div><h2 id="journey-temporal-action">' + (failure ? 'Route unavailable' : 'Finding your route…') + '</h2><p id="journey-temporal-detail">' + escapeHtml(detail) + '</p></div>';
     }
     const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
     const confidenceText = confidence ? confidence.label + ' · ' + confidence.source : '';
-    const actionButton = `<button class='route-primary journey-hero-refresh' data-route-action='refresh-now'${state.isStale ? '' : ' hidden'}>Recalculate from now</button>`;
-    return `<div id='journey-hero-state' class='journey-hero-state journey-hero-state-${state.phase}' aria-live='polite'><div class='journey-hero-state-top'><div><div id='journey-temporal-label' class='route-card-label'>${escapeHtml(state.label)}</div><strong id='journey-temporal-countdown'>${escapeHtml(temporalCountdownLabel(state))}</strong></div>${confidenceText ? `<span id='journey-temporal-confidence' class='journey-temporal-confidence'>${escapeHtml(confidenceText)}</span>` : `<span id='journey-temporal-confidence' class='journey-temporal-confidence' hidden></span>`}</div><h2 id='journey-temporal-action'>${escapeHtml(state.currentAction)}</h2><p id='journey-temporal-detail'>${escapeHtml(state.detail)}</p><div id='journey-temporal-next' class='journey-temporal-next'${state.nextAction ? '' : ' hidden'}><span>Then</span><strong>${escapeHtml(state.nextAction)}</strong></div>${actionButton}</div>`;
+    const actionButton = '<button class="route-primary journey-hero-refresh" data-route-action="refresh-now"' + (state.isStale ? '' : ' hidden') + '>Recalculate from now</button>';
+    return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-' + state.phase + '" aria-live="polite"><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown" class="now-countdown">' + escapeHtml(countdown) + '</strong></div>' + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>') + '</div><h2 id="journey-temporal-action">' + escapeHtml(state.currentAction) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p><div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>' + actionButton + '</div>';
   }
+
   function modeStatusLabel(status) {
     return ({ live: 'live', partial: 'partly live', alert: 'alert', checking: 'checking', fallback: 'fallback', scheduled: 'scheduled' })[status] || '—';
   }
@@ -917,7 +930,7 @@
     const focus = document.getElementById('journey-hero-focus');
     card.className = 'journey-hero-state journey-hero-state-' + state.phase;
     if (label) label.textContent = state.label;
-    if (countdown) countdown.textContent = temporalCountdownLabel(state);
+    if (countdown) countdown.textContent = temporalCountdownLabel(state) || '—';
     if (action) action.textContent = state.currentAction;
     if (detail) detail.textContent = state.detail;
     if (next) {
