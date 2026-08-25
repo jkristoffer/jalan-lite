@@ -12,6 +12,7 @@ const SEARCH_RADIUS_METRES = 600;
 const MAX_NEARBY_STOPS = 6;
 const MAX_STATIC_CANDIDATES = 24;
 const MAX_TRANSFER_CANDIDATES = 72;
+const MAX_TRANSFER_LIVE_CHECKS = 12;
 const MAX_RESULTS = 8;
 const WALKING_SPEED_METRES_PER_SECOND = 1.25;
 
@@ -364,6 +365,15 @@ async function fetchStopArrivals(apiKey, stopCode, signal, now = Date.now()) {
   }));
 }
 
+function setLegLive(candidate, index, status, arrivals, monitored, catchableArrivalMinutes = null) {
+  const leg = candidate.legs?.[index];
+  if (!leg) return;
+  leg.liveStatus = status;
+  leg.arrivals = arrivals;
+  leg.monitored = monitored;
+  if (index === 0) leg.catchableArrivalMinutes = catchableArrivalMinutes;
+}
+
 async function attachLiveArrivals(apiKey, candidates, signal) {
   const byStop = new Map();
   candidates.forEach((candidate) => {
@@ -376,10 +386,15 @@ async function attachLiveArrivals(apiKey, candidates, signal) {
       const services = await fetchStopArrivals(apiKey, stopCode, signal);
       stopCandidates.forEach((candidate) => {
         const live = services.get(candidate.serviceNo);
-        candidate.liveStatus = live ? 'ready' : 'unavailable';
-        candidate.arrivals = live?.arrivals || [null, null, null];
-        candidate.monitored = live?.monitored || [false, false, false];
-        candidate.catchableArrivalMinutes = live ? catchableArrival(live.arrivals, candidate.board.distanceMetres) : null;
+        const status = live ? 'ready' : 'unavailable';
+        const arrivals = live?.arrivals || [null, null, null];
+        const monitored = live?.monitored || [false, false, false];
+        const catchable = live ? catchableArrival(live.arrivals, candidate.board.distanceMetres) : null;
+        candidate.liveStatus = status;
+        candidate.arrivals = arrivals;
+        candidate.monitored = monitored;
+        candidate.catchableArrivalMinutes = catchable;
+        setLegLive(candidate, 0, status, arrivals, monitored, catchable);
       });
     } catch (error) {
       if (signal?.aborted) throw error;
@@ -388,6 +403,7 @@ async function attachLiveArrivals(apiKey, candidates, signal) {
         candidate.arrivals = [null, null, null];
         candidate.monitored = [false, false, false];
         candidate.catchableArrivalMinutes = null;
+        setLegLive(candidate, 0, 'error', [null, null, null], [false, false, false], null);
       });
     }
   }));
@@ -395,16 +411,87 @@ async function attachLiveArrivals(apiKey, candidates, signal) {
   return candidates;
 }
 
+async function attachTransferLiveArrivals(apiKey, candidates, signal) {
+  const transfers = candidates.filter((candidate) => candidate.kind === 'transfer' && candidate.legs?.[1]);
+  transfers.forEach((candidate) => {
+    candidate.secondLiveStatus = 'unchecked';
+    candidate.secondArrivals = [null, null, null];
+    candidate.secondMonitored = [false, false, false];
+    setLegLive(candidate, 1, 'unchecked', candidate.secondArrivals, candidate.secondMonitored);
+  });
+
+  const shortlist = transfers
+    .filter((candidate) => Number.isFinite(candidate.catchableArrivalMinutes))
+    .sort((left, right) => left.catchableArrivalMinutes - right.catchableArrivalMinutes
+      || left.totalWalkMetres - right.totalWalkMetres
+      || left.routeDistanceKm - right.routeDistanceKm
+      || left.rideStops - right.rideStops)
+    .slice(0, MAX_TRANSFER_LIVE_CHECKS);
+  const byStop = new Map();
+  shortlist.forEach((candidate) => {
+    const stopCode = candidate.transfer?.stopCode;
+    if (!stopCode) return;
+    if (!byStop.has(stopCode)) byStop.set(stopCode, []);
+    byStop.get(stopCode).push(candidate);
+  });
+
+  await Promise.all([...byStop.entries()].map(async ([stopCode, stopCandidates]) => {
+    try {
+      const services = await fetchStopArrivals(apiKey, stopCode, signal);
+      stopCandidates.forEach((candidate) => {
+        const live = services.get(candidate.secondServiceNo);
+        const status = live ? 'ready' : 'unavailable';
+        const arrivals = live?.arrivals || [null, null, null];
+        const monitored = live?.monitored || [false, false, false];
+        candidate.secondLiveStatus = status;
+        candidate.secondArrivals = arrivals;
+        candidate.secondMonitored = monitored;
+        setLegLive(candidate, 1, status, arrivals, monitored);
+      });
+    } catch {
+      stopCandidates.forEach((candidate) => {
+        candidate.secondLiveStatus = 'error';
+        candidate.secondArrivals = [null, null, null];
+        candidate.secondMonitored = [false, false, false];
+        setLegLive(candidate, 1, 'error', candidate.secondArrivals, candidate.secondMonitored);
+      });
+    }
+  }));
+
+  return candidates;
+}
+
+function liveCoverageTier(candidate) {
+  if (!Number.isFinite(candidate.catchableArrivalMinutes)) return 2;
+  if ((Number(candidate.transfers) || 0) === 0) return 0;
+  const secondArrivals = candidate.secondArrivals || candidate.legs?.[1]?.arrivals || [];
+  return candidate.secondLiveStatus === 'ready' && secondArrivals.some(Number.isFinite) ? 0 : 1;
+}
+
+function journeyKey(candidate) {
+  const services = (candidate.legs || []).map((leg) => `${leg.serviceNo}:${leg.direction}`).join('>') || `${candidate.serviceNo}:${candidate.direction}`;
+  return `${candidate.kind || 'direct'}|${services}|${candidate.board?.stopCode || ''}|${candidate.alight?.stopCode || ''}`;
+}
+
 function rankCandidates(candidates) {
-  return [...candidates]
+  const ranked = [...candidates]
     .sort((left, right) => {
       const leftLive = Number.isFinite(left.catchableArrivalMinutes) ? left.catchableArrivalMinutes : Number.POSITIVE_INFINITY;
       const rightLive = Number.isFinite(right.catchableArrivalMinutes) ? right.catchableArrivalMinutes : Number.POSITIVE_INFINITY;
-      return leftLive - rightLive
+      return liveCoverageTier(left) - liveCoverageTier(right)
         || (Number(left.transfers) || 0) - (Number(right.transfers) || 0)
+        || leftLive - rightLive
         || left.totalWalkMetres - right.totalWalkMetres
         || left.routeDistanceKm - right.routeDistanceKm
         || left.rideStops - right.rideStops;
+    });
+  const seen = new Set();
+  return ranked
+    .filter((candidate) => {
+      const key = journeyKey(candidate);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     })
     .slice(0, MAX_RESULTS);
 }
@@ -450,6 +537,7 @@ module.exports = async function handler(req, res) {
     const liveDeadline = createTimeoutSignal(8000);
     try {
       await attachLiveArrivals(apiKey, candidates, liveDeadline.signal);
+      await attachTransferLiveArrivals(apiKey, candidates, liveDeadline.signal);
     } finally {
       liveDeadline.cancel();
     }
@@ -462,7 +550,7 @@ module.exports = async function handler(req, res) {
       limitations: [
         'Bus journeys support direct routes and one transfer; MRT/LRT are not routed yet.',
         'Access and egress distances are straight-line approximations.',
-        'Live arrivals determine first-bus catchability, but second-leg transfer timing and in-vehicle travel time are not estimated yet.',
+        'Live arrivals are checked for both bus services when bounded live data is available, but transfer catchability and in-vehicle travel time are not estimated yet.',
       ],
       updatedAt: new Date().toISOString(),
     });
@@ -479,6 +567,8 @@ module.exports._test = {
   oneTransferCandidates,
   accessWalkMinutes,
   catchableArrival,
+  attachTransferLiveArrivals,
+  liveCoverageTier,
   rankCandidates,
   resetRouteCache() {
     cachedRoutes = null;
