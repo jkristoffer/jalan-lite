@@ -1,5 +1,5 @@
 const { SCENARIOS, DEFAULT_DEPARTURE_TIMES, endpointUrl, benchmarkAt, isClockTime } = require('./routing-scenarios');
-const routingSnapshot = require('./routing-snapshot');
+const routingResults = require('./routing-results');
 
 const DEFAULT_BASE_URL = 'https://jalan-lite.vercel.app';
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -235,7 +235,6 @@ async function runBenchmark({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   concurrency = DEFAULT_CONCURRENCY,
   fetcher = fetchJson,
-  captureResponses = false,
   source = 'live',
 } = {}) {
   const jobs = scenarios.flatMap((scenario) => departureTimes.map((departureTime) => ({ scenario, departureTime })));
@@ -249,7 +248,7 @@ async function runBenchmark({
     ]);
     const lta = summarizeLta(ltaResponse);
     const oneMap = summarizeOneMap(oneMapResponse);
-    const sample = {
+    return {
       scenarioId: scenario.id,
       scenarioLabel: scenario.label,
       departureTime,
@@ -259,11 +258,6 @@ async function runBenchmark({
       oneMap,
       comparison: compareSample(oneMap, lta),
     };
-    if (captureResponses) {
-      sample.requests = { lta: ltaUrl, onemap: oneMapUrl };
-      sample.responses = { lta: ltaResponse, onemap: oneMapResponse };
-    }
-    return sample;
   });
   return {
     generatedAt: new Date().toISOString(),
@@ -318,9 +312,9 @@ function helpText() {
     '  --scenarios ID,ID      Limit the fixed scenario set',
     '  --timeout-ms N         Request timeout (default: 30000)',
     '  --concurrency N        Concurrent samples (default: 2)',
-    '  --record FILE          Capture complete endpoint responses to a snapshot',
-    '  --replay FILE          Run without network using a recorded snapshot',
-    '  --force                Replace an existing --record snapshot',
+    '  --record FILE          Save compact benchmark results',
+    '  --replay FILE          Print saved benchmark results without network',
+    '  --force                Replace an existing --record file',
     '  --json                 Emit machine-readable JSON',
   ].join('\n');
 }
@@ -331,26 +325,24 @@ async function main(argv = process.argv.slice(2)) {
     console.log(helpText());
     return;
   }
-  const snapshot = options.replayPath ? routingSnapshot.readSnapshot(options.replayPath) : null;
-  const scenarioIds = options.scenarioIds || (snapshot?.scenarioIds?.length ? snapshot.scenarioIds : null);
-  const scenarios = scenarioIds
-    ? SCENARIOS.filter((scenario) => scenarioIds.includes(scenario.id))
+  if (options.replayPath) {
+    if (options.dateExplicit || options.departureTimesExplicit || options.scenarioIds) {
+      throw new Error('--replay uses the exact matrix stored in the results file; re-record it to change the date, times, or scenarios.');
+    }
+    const report = routingResults.reportFromResults(routingResults.readResults(options.replayPath));
+    console.log(options.json ? JSON.stringify(report, null, 2) : formatReport(report));
+    return;
+  }
+
+  const scenarios = options.scenarioIds
+    ? SCENARIOS.filter((scenario) => options.scenarioIds.includes(scenario.id))
     : SCENARIOS;
   if (!scenarios.length) throw new Error('No matching scenarios.');
 
-  const report = await runBenchmark({
-    ...options,
-    baseUrl: snapshot?.sourceBaseUrl || options.baseUrl,
-    date: snapshot && !options.dateExplicit ? snapshot.requestedDate : options.date,
-    departureTimes: snapshot && !options.departureTimesExplicit ? snapshot.departureTimes : options.departureTimes,
-    scenarios,
-    fetcher: snapshot ? routingSnapshot.createSnapshotFetcher(snapshot) : fetchJson,
-    captureResponses: Boolean(options.recordPath),
-    source: snapshot ? 'recorded-snapshot' : 'live',
-  });
+  const report = await runBenchmark({ ...options, scenarios, source: 'live' });
   let snapshotPath = null;
   if (options.recordPath) {
-    snapshotPath = routingSnapshot.writeSnapshot(options.recordPath, routingSnapshot.createSnapshot(report), { overwrite: options.force });
+    snapshotPath = routingResults.writeResults(options.recordPath, routingResults.createResults(report), { overwrite: options.force });
   }
   if (options.json) {
     console.log(JSON.stringify(snapshotPath ? { ...report, snapshotPath } : report, null, 2));
@@ -379,6 +371,6 @@ module.exports = {
   aggregateBenchmark,
   formatReport,
   runBenchmark,
-  createSnapshot: routingSnapshot.createSnapshot,
-  createSnapshotFetcher: routingSnapshot.createSnapshotFetcher,
+  createResults: routingResults.createResults,
+  reportFromResults: routingResults.reportFromResults,
 };

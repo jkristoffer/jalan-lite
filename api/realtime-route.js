@@ -353,6 +353,17 @@ function catchableArrival(arrivals, distanceMetres) {
   return arrivals.find((value) => Number.isFinite(value) && value >= minimum) ?? null;
 }
 
+function normalizeArrivalPayload(payload, now = Date.now()) {
+  if (!isBusArrivalPayload(payload)) throw new Error('Invalid LTA BusArrival payload.');
+  return new Map(payload.Services.map((service) => {
+    const buses = [service.NextBus, service.NextBus2, service.NextBus3];
+    return [String(service.ServiceNo).trim(), {
+      arrivals: buses.map((bus) => minutesUntil(bus?.EstimatedArrival, now)),
+      monitored: buses.map((bus) => bus?.Monitored === '1' || bus?.Monitored === 1 || bus?.Monitored === true),
+    }];
+  }));
+}
+
 async function fetchStopArrivals(apiKey, stopCode, signal, now = Date.now(), arrivalProvider = null) {
   if (typeof arrivalProvider === 'function') {
     return arrivalProvider({ apiKey, stopCode, signal, now });
@@ -364,13 +375,7 @@ async function fetchStopArrivals(apiKey, stopCode, signal, now = Date.now(), arr
     { headers: { AccountKey: apiKey, Accept: 'application/json' }, signal },
     { service: 'LTA BusArrival', validate: isBusArrivalPayload },
   );
-  return new Map(data.Services.map((service) => {
-    const buses = [service.NextBus, service.NextBus2, service.NextBus3];
-    return [String(service.ServiceNo).trim(), {
-      arrivals: buses.map((bus) => minutesUntil(bus?.EstimatedArrival, now)),
-      monitored: buses.map((bus) => bus?.Monitored === '1' || bus?.Monitored === 1 || bus?.Monitored === true),
-    }];
-  }));
+  return normalizeArrivalPayload(data, now);
 }
 
 function setLegLive(candidate, index, status, arrivals, monitored, catchableArrivalMinutes = null) {
@@ -469,8 +474,10 @@ async function attachTransferLiveArrivals(apiKey, candidates, signal, { now = Da
   return candidates;
 }
 
-async function attachServiceSchedules(apiKey, candidates) {
-  const schedules = await busServiceSchedule.loadServiceSchedules(apiKey);
+async function attachServiceSchedules(apiKey, candidates, serviceScheduleProvider = null) {
+  const schedules = typeof serviceScheduleProvider === 'function'
+    ? await serviceScheduleProvider({ apiKey })
+    : await busServiceSchedule.loadServiceSchedules(apiKey);
   candidates.forEach((candidate) => {
     (candidate.legs || []).forEach((leg) => {
       const schedule = schedules.get(busServiceSchedule.serviceKey(leg.serviceNo, leg.direction));
@@ -525,16 +532,17 @@ module.exports = async function handler(req, res) {
     if (!start || !end) return res.status(400).json({ error: 'Valid Singapore start and end coordinates are required.' });
 
     const apiKey = process.env.LTA_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: 'LTA_API_KEY is not configured.' });
     const benchmark = req._benchmark || {};
+    const hasStaticProviders = typeof benchmark.stopsProvider === 'function' && typeof benchmark.routesProvider === 'function';
+    if (!apiKey && !hasStaticProviders) return res.status(503).json({ error: 'LTA_API_KEY is not configured.' });
     const liveOptions = {
       now: Number.isFinite(Number(benchmark.nowMs)) ? Number(benchmark.nowMs) : Date.now(),
       arrivalProvider: benchmark.arrivalProvider,
     };
 
     const [stopRows, routeRows] = await Promise.all([
-      nearbyStopsApi._shared.loadStops(apiKey),
-      loadRoutes(apiKey),
+      typeof benchmark.stopsProvider === 'function' ? benchmark.stopsProvider({ apiKey }) : nearbyStopsApi._shared.loadStops(apiKey),
+      typeof benchmark.routesProvider === 'function' ? benchmark.routesProvider({ apiKey }) : loadRoutes(apiKey),
     ]);
     const originStops = nearby(stopRows, start);
     const destinationStops = nearby(stopRows, end);
@@ -570,7 +578,7 @@ module.exports = async function handler(req, res) {
     let scheduleStatus = 'not-requested';
     if (includeSchedule) {
       try {
-        await attachServiceSchedules(apiKey, candidates);
+        await attachServiceSchedules(apiKey, candidates, benchmark.serviceScheduleProvider);
         scheduleStatus = 'ready';
       } catch (error) {
         busServiceSchedule.reset();
@@ -608,6 +616,7 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports._test = {
+  isBusArrivalPayload,
   isBusRoutesPayload,
   parsePoint,
   directCandidates,
@@ -615,6 +624,7 @@ module.exports._test = {
   accessWalkMinutes,
   catchableArrival,
   fetchStopArrivals,
+  normalizeArrivalPayload,
   attachLiveArrivals,
   attachTransferLiveArrivals,
   attachServiceSchedules,

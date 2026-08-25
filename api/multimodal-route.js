@@ -385,7 +385,9 @@ module.exports = async function handler(req, res) {
 
   const busPromise = runBusRoute(start, end, benchmark).catch((error) => ({ status: 502, body: { error: error.message || 'Bus routing unavailable.' } }));
   const apiKey = process.env.LTA_API_KEY;
-  const schedulePromise = apiKey
+  const schedulePromise = typeof benchmark?.scheduleProvider === 'function'
+    ? Promise.resolve(benchmark.scheduleProvider({ apiKey, clock: benchmark?.clock })).then((schedule) => ({ schedule })).catch((error) => ({ error }))
+    : apiKey
     ? trainSchedule.loadSchedule(apiKey).then((schedule) => ({ schedule })).catch((error) => ({ error }))
     : Promise.resolve({ error: new Error('LTA_API_KEY is not configured.') });
   const [busResult, scheduleResult] = await Promise.all([busPromise, schedulePromise]);
