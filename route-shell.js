@@ -31,6 +31,7 @@
   let focusMode = false;
   let focusClockTimer = null;
   let focusWakeLock = null;
+  let temporalTimer = null;
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -137,11 +138,13 @@
 
   function journey() {
     const itinerary = routeState.data;
+    const currentRoute = itinerary?.service === 'now' || itinerary?.service === 'next';
     const departure = itinerary?.startTime ? timeAt(itinerary.startTime) : timeLabel(saved?.departureTime || draftState.departureTime);
     const arrival = itinerary?.endTime ? timeAt(itinerary.endTime) : '—';
-    const arriveBy = saved?.timeMode === 'arrive';
-    const requested = timeLabel(saved?.departureTime || draftState.departureTime);
-    return `<section class="journey-card"><div class="journey-row"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">${escapeHtml(saved.origin)}</div></div></div><div class="journey-row"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">${escapeHtml(saved.destination)}</div></div></div><div class="journey-time-grid"><div><span class="route-field-label">${arriveBy ? 'Arrive by' : 'Leave at'}</span><strong>${escapeHtml(arriveBy ? requested : departure)}</strong></div><div><span class="route-field-label">${arriveBy ? 'Expected departure' : 'Expected arrival'}</span><strong>${escapeHtml(arriveBy ? (departure || '—') : (arrival || '—'))}</strong></div></div></section>`;
+    const arriveBy = !currentRoute && saved?.timeMode === 'arrive';
+    const requested = currentRoute ? (itinerary.service === 'next' ? 'Next available' : 'Now') : timeLabel(saved?.departureTime || draftState.departureTime);
+    const leftLabel = currentRoute ? (itinerary.service === 'next' ? 'Next departure' : 'Leave now') : (arriveBy ? 'Arrive by' : 'Leave at');
+    return '<section class="journey-card"><div class="journey-row"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">' + escapeHtml(saved.origin) + '</div></div></div><div class="journey-row"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">' + escapeHtml(saved.destination) + '</div></div></div><div class="journey-time-grid"><div><span class="route-field-label">' + leftLabel + '</span><strong>' + escapeHtml(arriveBy ? requested : (currentRoute ? departure : departure)) + '</strong></div><div><span class="route-field-label">' + (arriveBy ? 'Expected departure' : 'Expected arrival') + '</span><strong>' + escapeHtml(arriveBy ? (departure || '—') : (arrival || '—')) + '</strong></div></div></section>';
   }
 
   function timing(leg) {
@@ -223,27 +226,122 @@
     return { departure, arrival };
   }
 
-  function focusInfo(now = Date.now()) {
+
+  function temporalLegs(itinerary, departure) {
+    let cursor = departure;
+    return (itinerary?.legs || []).map((leg, index) => {
+      const start = toTimestamp(leg.departureTime) || cursor;
+      const duration = Math.max(0, Number(leg.duration) || 0) * 1000;
+      const end = toTimestamp(leg.arrivalTime) || (start + duration);
+      cursor = Math.max(cursor, end);
+      return { leg, index, start, end };
+    });
+  }
+
+  function actionLabel(leg, active = false) {
+    if (!leg) return 'Follow your saved commute';
+    if (leg.mode === 'WALK') return leg.toName ? 'Walk to ' + leg.toName : 'Walk to your next stop';
+    if (leg.mode === 'BUS') return (active ? 'Ride ' : 'Take ') + 'Bus ' + (leg.routeName || 'service');
+    if (leg.mode === 'SUBWAY') return (active ? 'Ride ' : 'Take ') + (leg.lineName ? 'MRT · ' + leg.lineName : 'the MRT');
+    return active ? 'Continue your journey' : 'Follow the route';
+  }
+
+  function actionDetail(leg, now = Date.now()) {
+    if (!leg) return 'Waiting for the route timetable.';
+    const details = [];
+    const places = [leg.fromName, leg.toName].filter(Boolean).join(' → ');
+    if (places) details.push(places);
+    if (leg.stopCount) details.push(leg.stopCount + ' stop' + (leg.stopCount === 1 ? '' : 's'));
+    if (leg.distance) details.push(distanceLabel(leg.distance));
+    if (leg.duration) details.push(durationLabel(leg.duration));
+    if (leg.mode === 'BUS' && Array.isArray(leg.live?.arrivals)) {
+      const first = leg.live.arrivals.find((value) => Number.isFinite(value));
+      if (Number.isFinite(first)) details.push(first === 0 ? 'Arriving now' : 'Next bus in ' + first + ' min');
+    }
+    const status = legConfidence(leg);
+    const age = liveTools.ageLabel(status.updatedAt, now);
+    details.push(status.label + ' · ' + status.source + (age ? ' · ' + age : ''));
+    return details.join(' · ');
+  }
+
+  function journeyTemporalState(now = Date.now()) {
     const itinerary = routeState.data;
     const { departure, arrival } = focusTimes();
-    if (!departure || !arrival) return { phase: 'loading', label: 'GETTING READY', countdown: '—', context: 'Waiting for the route timetable.' };
+    if (!itinerary || !departure || !arrival) {
+      return {
+        phase: 'loading',
+        label: 'GETTING READY',
+        countdownMs: 0,
+        currentAction: 'Waiting for your route',
+        detail: 'The route timetable is still being prepared.',
+        nextAction: '',
+        confidenceLeg: null,
+        isStale: false,
+      };
+    }
+
+    const legs = temporalLegs(itinerary, departure);
     if (now < departure) {
-      const first = itinerary?.legs?.[0];
-      const context = first?.mode === 'WALK' ? `Walk to ${first.toName || 'your boarding point'}` : first ? `Board ${legTitle(first)}` : 'Your saved commute';
-      return { phase: 'depart', label: 'LEAVE IN', countdown: countdownLabel(departure - now), context };
+      const first = legs[0];
+      const next = legs.slice(1).find((entry) => entry.leg.mode !== 'WALK') || legs[1];
+      return {
+        phase: 'upcoming',
+        label: itinerary.service === 'next' ? 'NEXT DEPARTURE' : 'LEAVE IN',
+        countdownMs: departure - now,
+        currentAction: actionLabel(first?.leg),
+        detail: actionDetail(first?.leg, now),
+        nextAction: next ? actionLabel(next.leg) : '',
+        confidenceLeg: next?.leg || first?.leg || null,
+        isStale: false,
+      };
     }
+
     if (now < arrival) {
-      const active = (itinerary?.legs || []).find((leg) => {
-        const start = toTimestamp(leg.departureTime) || departure;
-        const end = toTimestamp(leg.arrivalTime) || arrival;
-        return now < end && now >= start;
-      }) || itinerary?.legs?.[itinerary.legs.length - 1];
-      const context = active?.mode === 'WALK'
-        ? `Walk to ${active.toName || 'your destination'}`
-        : active ? legTitle(active) : 'On your way';
-      return { phase: 'arrive', label: 'ARRIVE IN', countdown: countdownLabel(arrival - now), context };
+      const active = legs.find((entry) => now >= entry.start && now < entry.end);
+      const upcoming = legs.find((entry) => entry.start > now);
+      const current = active || upcoming;
+      return {
+        phase: active ? 'in_progress' : 'between_legs',
+        label: active ? 'NOW' : 'NEXT',
+        countdownMs: active ? arrival - now : Math.max(0, (upcoming?.start || arrival) - now),
+        currentAction: actionLabel(current?.leg, Boolean(active)),
+        detail: actionDetail(current?.leg, now),
+        nextAction: active ? (legs.slice(active.index + 1).find((entry) => entry.leg.mode !== 'WALK')?.leg ? actionLabel(legs.slice(active.index + 1).find((entry) => entry.leg.mode !== 'WALK').leg) : '') : '',
+        confidenceLeg: current?.leg || null,
+        isStale: false,
+      };
     }
-    return { phase: 'arrived', label: 'ARRIVED', countdown: '00:00', context: saved?.destination || 'Destination reached' };
+
+    return {
+      phase: 'complete',
+      label: 'TRIP TIME PASSED',
+      countdownMs: 0,
+      currentAction: 'Ready for a fresh route',
+      detail: 'The planned arrival at ' + (saved?.destination || 'your destination') + ' was ' + timeAt(arrival) + '.',
+      nextAction: '',
+      confidenceLeg: null,
+      isStale: true,
+    };
+  }
+
+  function temporalCountdownLabel(state) {
+    if (!state || !state.countdownMs) return '';
+    const totalMinutes = Math.max(1, Math.ceil(state.countdownMs / 60000));
+    if (state.phase === 'upcoming') return totalMinutes < 60 ? totalMinutes + ' min' : Math.floor(totalMinutes / 60) + ' hr ' + (totalMinutes % 60 ? (totalMinutes % 60) + ' min' : '');
+    if (state.phase === 'in_progress' || state.phase === 'between_legs') return 'Arrive in ' + (totalMinutes < 60 ? totalMinutes + ' min' : Math.floor(totalMinutes / 60) + ' hr');
+    return '';
+  }
+
+  function focusInfo(now = Date.now()) {
+    const state = journeyTemporalState(now);
+    if (state.phase === 'loading') return { phase: 'loading', label: 'GETTING READY', countdown: '—', context: state.currentAction };
+    const phase = state.phase === 'upcoming' ? 'depart' : state.phase === 'complete' ? 'complete' : 'arrive';
+    return {
+      phase,
+      label: state.phase === 'complete' ? 'TRIP TIME PASSED' : state.label,
+      countdown: state.countdownMs ? countdownLabel(state.countdownMs) : '—',
+      context: state.phase === 'complete' ? state.detail : state.currentAction,
+    };
   }
 
   function countdownLabel(milliseconds) {
@@ -369,6 +467,22 @@
     return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2><p class="route-card-helper">Tap a journey leg to see it on the map.</p></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div><button class="focus-launch-button" data-route-action="focus">Enter Focus mode</button>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
   }
 
+  function temporalCard() {
+    const state = journeyTemporalState();
+    if (state.phase === 'loading') return '';
+    const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
+    const confidenceText = confidence ? confidence.label + ' · ' + confidence.source : '';
+    const actionButton = state.isStale
+      ? '<button class="route-primary journey-temporal-action" data-route-action="refresh-now">Recalculate from now</button>'
+      : '<button class="route-primary journey-temporal-action" data-route-action="refresh-now" hidden>Recalculate from now</button>';
+    return '<section id="journey-temporal-card" class="journey-temporal journey-temporal-' + state.phase + '" aria-live="polite">'
+      + '<div class="journey-temporal-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown">' + escapeHtml(temporalCountdownLabel(state)) + '</strong></div>'
+      + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>')
+      + '</div><h2 id="journey-temporal-action">' + escapeHtml(state.currentAction) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p>'
+      + '<div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>'
+      + actionButton + '</section>';
+  }
+
   function modeStatusLabel(status) {
     return ({ live: 'live', partial: 'partly live', alert: 'alert', checking: 'checking', fallback: 'fallback', scheduled: 'scheduled' })[status] || '—';
   }
@@ -456,7 +570,7 @@
     const sourceHeading = `Bus ${hasBus ? modeStatusLabel(busStatus) : '—'} · MRT ${hasMrt ? modeStatusLabel(mrtStatus) : '—'}`;
     const refreshDisabled = liveRefreshInFlight || liveRefreshStatus === 'loading' || !hasLiveTiming(itinerary);
     const refreshLabel = liveRefreshInFlight || liveRefreshStatus === 'loading' ? 'Updating…' : 'Refresh live data';
-    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Your commute</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing confidence</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state live-state-${escapeHtml(summary.tone)}">${escapeHtml(summary.label)}</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class="timing-controls"><span class="timing-control-note">${escapeHtml(liveFreshness())}</span><button type="button" class="timing-refresh" data-route-action="refresh-live" ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section>${notificationsCard()}<div class="route-actions"><button class="route-primary" data-route-action="refresh">Recalculate route</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Your commute</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${temporalCard()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing confidence</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state live-state-${escapeHtml(summary.tone)}">${escapeHtml(summary.label)}</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class="timing-controls"><span class="timing-control-note">${escapeHtml(liveFreshness())}</span><button type="button" class="timing-refresh" data-route-action="refresh-live" ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section>${notificationsCard()}<div class="route-actions"><button class="route-primary" data-route-action="refresh">Recalculate route</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
   }
 
   function demoTimeline(rerouted) {
@@ -561,6 +675,7 @@
     routeRequests.abort();
     liveRequests.abort();
     liveRefreshInFlight = false;
+    stopTemporalClock();
   }
 
   function syncLiveRefresh() {
@@ -611,8 +726,10 @@
 
   function viewer() {
     const itinerary = routeState.data;
-    const modeLabel = saved?.timeMode === 'arrive' ? 'Arrive by' : 'Leave at';
-    return `<div class="route-viewer"><div class="picker-topbar"><button class="picker-back" data-route-action="close-viewer">‹</button><div><div class="route-kicker">${escapeHtml(modeLabel)} ${escapeHtml(timeLabel(saved.departureTime))}</div><div class="picker-title">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div></div><div class="route-viewer-map-wrap"><div id="route-viewer-map" class="route-viewer-map"></div><div id="viewer-fallback" class="map-fallback" hidden><strong>Map unavailable</strong><span>The step-by-step route is still shown below.</span></div></div><div class="route-viewer-sheet"><div class="route-viewer-summary"><div><span class="route-card-label">Journey</span><strong>${itinerary ? durationLabel(itinerary.duration) : '—'}</strong></div><span>${itinerary ? itinerary.transfers : 0} transfer${itinerary?.transfers === 1 ? '' : 's'}</span></div>${itinerary ? timeline(itinerary) : ''}</div></div>`;
+    const currentRoute = itinerary?.service === 'now' || itinerary?.service === 'next';
+    const modeLabel = currentRoute ? (itinerary.service === 'next' ? 'Next departure' : 'Leave now') : (saved?.timeMode === 'arrive' ? 'Arrive by' : 'Leave at');
+    const modeTime = currentRoute ? timeAt(itinerary.startTime) : timeLabel(saved.departureTime);
+    return '<div class="route-viewer"><div class="picker-topbar"><button class="picker-back" aria-label="Back" data-route-action="close-viewer">‹</button><div><div class="route-kicker">' + escapeHtml(modeLabel) + ' ' + escapeHtml(modeTime) + '</div><div class="picker-title">' + escapeHtml(saved.origin) + ' → ' + escapeHtml(saved.destination) + '</div></div></div><div class="route-viewer-map-wrap"><div id="route-viewer-map" class="route-viewer-map"></div><div id="viewer-fallback" class="map-fallback" hidden><strong>Map unavailable</strong><span>The step-by-step route is still shown below.</span></div></div><div class="route-viewer-sheet"><div class="route-viewer-summary"><div><span class="route-card-label">Journey</span><strong>' + (itinerary ? durationLabel(itinerary.duration) : '—') + '</strong></div><span>' + (itinerary ? itinerary.transfers : 0) + ' transfer' + (itinerary?.transfers === 1 ? '' : 's') + '</span></div>' + (itinerary ? timeline(itinerary) : '') + '</div></div>';
   }
 
   function destroyMap() {
@@ -621,6 +738,50 @@
       try { map.remove(); } catch {}
     }
     map = null;
+  }
+
+  function stopTemporalClock() {
+    if (temporalTimer) window.clearInterval(temporalTimer);
+    temporalTimer = null;
+  }
+
+  function updateTemporalDom() {
+    if (document.hidden || focusMode || viewing || pickerField || disruptionDemoOpen) return;
+    const card = document.getElementById('journey-temporal-card');
+    if (!card) return;
+    const state = journeyTemporalState();
+    const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
+    const label = document.getElementById('journey-temporal-label');
+    const countdown = document.getElementById('journey-temporal-countdown');
+    const action = document.getElementById('journey-temporal-action');
+    const detail = document.getElementById('journey-temporal-detail');
+    const next = document.getElementById('journey-temporal-next');
+    const confidenceNode = document.getElementById('journey-temporal-confidence');
+    const refresh = card.querySelector('[data-route-action="refresh-now"]');
+    card.className = 'journey-temporal journey-temporal-' + state.phase;
+    if (label) label.textContent = state.label;
+    if (countdown) countdown.textContent = temporalCountdownLabel(state);
+    if (action) action.textContent = state.currentAction;
+    if (detail) detail.textContent = state.detail;
+    if (next) {
+      next.hidden = !state.nextAction;
+      next.querySelector('strong').textContent = state.nextAction;
+    }
+    if (confidenceNode) {
+      confidenceNode.hidden = !confidence;
+      confidenceNode.textContent = confidence ? confidence.label + ' · ' + confidence.source : '';
+    }
+    if (refresh) {
+      refresh.hidden = !state.isStale;
+      refresh.disabled = routeState.status === 'rerouting';
+      refresh.textContent = routeState.status === 'rerouting' ? 'Updating route…' : 'Recalculate from now';
+    }
+  }
+
+  function syncTemporalClock() {
+    stopTemporalClock();
+    if (document.hidden || focusMode || viewing || pickerField || disruptionDemoOpen || !saved || !routeState.data || routeState.status === 'loading') return;
+    temporalTimer = window.setInterval(updateTemporalDom, 30000);
   }
 
   function render() {
@@ -632,6 +793,7 @@
     if (viewing) requestAnimationFrame(renderViewerMap);
     if (saved && !pickerField && !viewing && saved.originPoint && saved.destinationPoint && routeState.status === 'idle') routeData();
     syncLiveRefresh();
+    syncTemporalClock();
   }
 
   function openPicker(field) {
@@ -936,9 +1098,9 @@
     }
   }
 
-  async function routeData({ preserveCurrent = false } = {}) {
+  async function routeData({ preserveCurrent = false, fromNow = false } = {}) {
     if (preserveCurrent && routeState.status === 'rerouting') return;
-    const previous = preserveCurrent ? routeState.data : null;
+    const previous = (preserveCurrent || fromNow) ? routeState.data : null;
     const previousLiveState = snapshotLiveState(previous);
     const request = routeRequests.start();
     liveRequests.abort();
@@ -950,7 +1112,7 @@
     liveRefreshStatus = 'loading';
     routeState = { status: previous ? 'rerouting' : 'loading', data: previous || null, error: '', notice: '' }; render();
     const savedRoute = saved;
-    const start = `${savedRoute.originPoint.lat},${savedRoute.originPoint.lng}`; const end = `${savedRoute.destinationPoint.lat},${savedRoute.destinationPoint.lng}`; const time = savedRoute.departureTime ? `&time=${encodeURIComponent(savedRoute.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(savedRoute.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
+    const start = `${savedRoute.originPoint.lat},${savedRoute.originPoint.lng}`; const end = `${savedRoute.destinationPoint.lat},${savedRoute.destinationPoint.lng}`; const time = fromNow ? '' : (savedRoute.departureTime ? `&time=${encodeURIComponent(savedRoute.departureTime)}` : ''); const timeMode = `&timeMode=${encodeURIComponent(fromNow ? 'depart' : (savedRoute.timeMode === 'arrive' ? 'arrive' : 'depart'))}`;
     let liveRequest = null;
     try {
       const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`, { signal: request.controller.signal });
@@ -961,7 +1123,7 @@
       const routed = normalizeRoute(data);
       if (!routed) throw new Error('No public-transport itinerary.');
       let itinerary = routed;
-      let notice = '';
+      let notice = fromNow ? 'Route updated from the current time.' : '';
       if (preserveCurrent && previous) {
         const candidate = disruptionTools.bestUnblocked(routed, previous.liveAlerts || []);
         if (!candidate) {
@@ -992,7 +1154,7 @@
         restoreLiveState(previousLiveState);
         liveUpdatedAt = previousUpdatedAt;
         liveRefreshStatus = previousRefreshStatus;
-        routeState = { status: 'ready', data: previous, error: '', notice: `Could not recalculate around the disruption: ${error.message || 'routing is unavailable.'} Your current route is still shown.` };
+        routeState = { status: 'ready', data: previous, error: '', notice: fromNow ? `Could not recalculate from the current time: ${error.message || 'routing is unavailable.'} Your current route is still shown.` : `Could not recalculate around the disruption: ${error.message || 'routing is unavailable.'} Your current route is still shown.` };
       } else {
         routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' };
       }
@@ -1028,6 +1190,7 @@
         else if (action === 'confirm') { draftState[pickerField] = mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label; draftState[`${pickerField}Point`] = { ...mapPosition.center }; closePicker(); }
         else if (action === 'manual') manualLocation();
         else if (action === 'locate') locate();
+        else if (action === 'refresh-now') routeData({ fromNow: true });
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'refresh-live') refreshLiveTimings();
         else if (action === 'focus') enterFocusMode();
@@ -1046,12 +1209,14 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       stopLiveRefresh();
+      stopTemporalClock();
       releaseFocusWakeLock();
       return;
     }
     if (focusMode) requestFocusWakeLock();
     refreshLiveTimings();
     syncLiveRefresh();
+    syncTemporalClock();
   });
 
   launcher.onclick = () => { shell.hidden = false; launcher.hidden = true; render(); };
