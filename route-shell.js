@@ -378,6 +378,18 @@
     return '';
   }
 
+  function temporalActionKicker(state) {
+    if (!state || state.phase === 'loading') return 'ROUTE STATUS';
+    if (state.phase === 'planning') return 'YOUR PLAN';
+    if (state.phase === 'in_progress') return 'DO THIS NOW';
+    if (state.phase === 'complete') return 'NEXT STEP';
+    return 'NEXT ACTION';
+  }
+
+  function temporalActionText(state) {
+    return state?.phase === 'complete' ? 'Plan a fresh route' : (state?.currentAction || 'Follow your saved commute');
+  }
+
   function focusInfo(now = Date.now()) {
     const state = journeyTemporalState(now);
     if (state.phase === 'loading') return { phase: 'loading', label: 'GETTING READY', countdown: '—', context: state.currentAction };
@@ -520,13 +532,14 @@
     if (state.phase === 'loading') {
       const failure = routeState.status === 'error';
       const detail = failure ? routeState.error : 'Checking Singapore public transport.';
-      return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-loading" role="status"><div class="now-state-top"><div><div class="route-card-label">' + (failure ? 'ROUTE UNAVAILABLE' : 'PLANNING') + '</div><strong id="journey-temporal-countdown" class="now-countdown">—</strong></div><span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span></div><h2 id="journey-temporal-action">' + (failure ? 'Route unavailable' : 'Finding your route…') + '</h2><p id="journey-temporal-detail">' + escapeHtml(detail) + '</p></div>';
+      const failureAction = failure ? '<button class="route-primary journey-hero-refresh" data-route-action="refresh">Try again</button>' : '';
+      return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-loading" role="status"><div class="journey-action-block"><div id="journey-temporal-action-label" class="journey-action-kicker">' + temporalActionKicker(state) + '</div><h2 id="journey-temporal-action">' + (failure ? 'Route unavailable' : 'Finding your route…') + '</h2><p id="journey-temporal-detail">' + escapeHtml(detail) + '</p></div><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + (failure ? 'ROUTE UNAVAILABLE' : 'PLANNING') + '</div><strong id="journey-temporal-countdown" class="now-countdown">—</strong></div><span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span></div>' + failureAction + '</div>';
     }
     const confidence = planning ? null : (state.confidenceLeg ? legConfidence(state.confidenceLeg) : null);
     const confidenceText = planning ? 'Scheduled · refreshes later' : (confidence ? confidence.label + ' · ' + confidence.source : '');
     const relativeMarkup = '<span id="journey-temporal-relative" class="now-planning-relative"' + (planning ? '' : ' hidden') + '>' + (planning ? 'In ' + escapeHtml(temporalCountdownLabel(state)) : '') + '</span>';
     const actionButton = '<button class="route-primary journey-hero-refresh" data-route-action="refresh-now"' + (state.isStale ? '' : ' hidden') + '>Recalculate from now</button>';
-    return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-' + state.phase + '" aria-live="polite"><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown" class="now-countdown">' + escapeHtml(countdown) + '</strong>' + relativeMarkup + '</div>' + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>') + '</div><h2 id="journey-temporal-action">' + escapeHtml(state.currentAction) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p><div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>' + actionButton + '</div>';
+    return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-' + state.phase + '" aria-live="polite"><div class="journey-action-block"><div id="journey-temporal-action-label" class="journey-action-kicker">' + temporalActionKicker(state) + '</div><h2 id="journey-temporal-action">' + escapeHtml(temporalActionText(state)) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p></div><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown" class="now-countdown">' + escapeHtml(countdown) + '</strong>' + relativeMarkup + '</div>' + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>') + '</div><div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>' + actionButton + '</div>';
   }
 
   function modeStatusLabel(status) {
@@ -974,6 +987,7 @@
     const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
     const label = document.getElementById('journey-temporal-label');
     const countdown = document.getElementById('journey-temporal-countdown');
+    const actionKicker = document.getElementById('journey-temporal-action-label');
     const action = document.getElementById('journey-temporal-action');
     const detail = document.getElementById('journey-temporal-detail');
     const next = document.getElementById('journey-temporal-next');
@@ -983,7 +997,8 @@
     card.className = 'journey-hero-state journey-hero-state-' + state.phase;
     if (label) label.textContent = state.label;
     if (countdown) countdown.textContent = temporalCountdownLabel(state) || '—';
-    if (action) action.textContent = state.currentAction;
+    if (actionKicker) actionKicker.textContent = temporalActionKicker(state);
+    if (action) action.textContent = temporalActionText(state);
     if (detail) detail.textContent = state.detail;
     if (next) {
       next.hidden = !state.nextAction;

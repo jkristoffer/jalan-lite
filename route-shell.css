@@ -512,3 +512,19 @@
   .dashboard-mode .now-countdown{font-size:clamp(44px,15vw,64px)}
   .dashboard-nav-button.selected:after{right:14%;left:14%}
 }
+
+/* Now: make the next action the first question answered */
+.dashboard-mode .journey-hero-state{display:flex;flex-direction:column}
+.dashboard-mode .journey-action-block{order:1}
+.dashboard-mode .journey-action-kicker{margin:0;color:var(--charcoal,#596262);font:700 10px/1.2 'IBM Plex Mono',monospace;letter-spacing:.12em;text-transform:uppercase}
+.dashboard-mode .journey-action-block h2{max-width:38rem;margin:6px 0 0;font-size:clamp(28px,7vw,40px);line-height:1.04;letter-spacing:-.04em}
+.dashboard-mode .journey-action-block p{max-width:44rem;margin-top:9px}
+.dashboard-mode .journey-hero-state .now-state-top{order:2;margin-top:16px;padding-top:12px;border-top:1px solid var(--soft-grey,#DFE5E1)}
+.dashboard-mode .journey-hero-state .journey-temporal-next{order:3}
+.dashboard-mode .journey-hero-state .journey-hero-refresh{order:4}
+.dashboard-mode .now-countdown{font-size:clamp(38px,10vw,54px);line-height:.95}
+.dashboard-mode .journey-hero-state-loading .now-state-top,.dashboard-mode .journey-hero-state-complete .now-state-top{display:none}
+.dashboard-mode .journey-hero-state-in_progress .journey-action-kicker,.dashboard-mode .journey-hero-state-between_legs .journey-action-kicker{color:var(--success)}
+.dashboard-mode .journey-hero-state-complete .journey-action-kicker{color:var(--warning)}
+.dashboard-mode .journey-hero-state-loading .journey-action-kicker{color:var(--info)}
+.dashboard-mode .journey-hero-state-loading .journey-hero-refresh{margin-top:15px}
