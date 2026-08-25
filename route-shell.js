@@ -642,7 +642,15 @@
     if (!pager) return;
     clearDashboardScrollUnlock();
     const panes = ['now', 'route', 'live'];
-    pager.scrollTo({ left: pager.clientWidth * dashboardPaneIndex(dashboardPane), top: 0, behavior: 'auto' });
+    const align = () => {
+      const target = pager.clientWidth * dashboardPaneIndex(dashboardPane);
+      const previousBehavior = pager.style.scrollBehavior;
+      pager.style.scrollBehavior = 'auto';
+      pager.scrollTo({ left: target, top: 0, behavior: 'auto' });
+      pager.style.scrollBehavior = previousBehavior;
+    };
+    align();
+    window.requestAnimationFrame(align);
     updateDashboardNavDom();
     let scrollTimer = null;
     const syncFromScroll = () => {
