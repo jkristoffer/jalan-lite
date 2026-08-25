@@ -44,6 +44,8 @@ node benchmarks/capture-lta-fixture.js \
   --output benchmarks/fixtures/lta-network-2026-08-25.json.gz
 ```
 
+The capture automatically adds BusArrival payloads for candidate boarding and one-transfer stops in the selected static network; `--stops` remains an additive way to include known stops.
+
 Then run the LTA-native router offline from that fixture:
 
 ```sh
@@ -51,6 +53,8 @@ node benchmarks/replay-lta-fixture.js \
   --fixture benchmarks/fixtures/lta-network-2026-08-25.json.gz \
   --date 2026-08-25
 ```
+
+Raw replay normalizes live BusArrival timestamps against the fixture `capturedAt`; `--date` and `--times` continue to control scheduled rail time.
 
 By default, static bus rows are limited to the fixed benchmark journeys and their one-transfer neighborhoods; `--full-static` keeps the entire static feed. The fixture contains raw BusStops, BusRoutes, BusServices, selected BusArrival payloads, and the parsed GTFS train schedule. It never stores API credentials. Use `--force` only when intentionally replacing an existing file.
 

@@ -3,10 +3,23 @@ const trainSchedule = require('../train-schedule')._shared;
 const { SCENARIOS, DEFAULT_DEPARTURE_TIMES, benchmarkAt } = require('./routing-scenarios');
 const fixture = require('./lta-network-fixture');
 
+function captureTimestampMs(networkFixture) {
+  const capturedAt = networkFixture?.capturedAt;
+  const timestamp = typeof capturedAt === 'string' && capturedAt.trim() ? Date.parse(capturedAt) : NaN;
+  if (!Number.isFinite(timestamp)) throw new Error('LTA network fixture capturedAt must be a valid timestamp for offline replay.');
+  return timestamp;
+}
+
 async function runFixtureRoute(networkFixture, scenario, date, departureTime) {
   const clock = trainSchedule.clockFromIso(benchmarkAt(date, departureTime));
   if (!clock) throw new Error(`Invalid fixture route clock for ${date} ${departureTime}.`);
-  const providers = fixture.createProviders(networkFixture);
+  const nowMs = captureTimestampMs(networkFixture);
+  const missingArrivalStops = new Set();
+  const providers = fixture.createProviders(networkFixture, {
+    onMissingArrival(stopCode) {
+      missingArrivalStops.add(String(stopCode));
+    },
+  });
   const query = new URLSearchParams({
     start: `${scenario.start.lat},${scenario.start.lng}`,
     end: `${scenario.end.lat},${scenario.end.lng}`,
@@ -15,8 +28,11 @@ async function runFixtureRoute(networkFixture, scenario, date, departureTime) {
   const capture = multimodal._test.captureResponse();
   await multimodal({
     url: `/api/multimodal-route?${query}`,
-    _benchmark: { ...providers, clock, nowMs: clock.epochMs },
+    _benchmark: { ...providers, clock, nowMs },
   }, capture.res);
+  if (missingArrivalStops.size) {
+    throw new Error(`LTA network fixture is missing BusArrival data for stop(s): ${[...missingArrivalStops].join(', ')}.`);
+  }
   return capture.result;
 }
 
@@ -84,4 +100,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runFixtureRoute, runFixtureMatrix, parseArgs, helpText };
+module.exports = { captureTimestampMs, runFixtureRoute, runFixtureMatrix, parseArgs, helpText };

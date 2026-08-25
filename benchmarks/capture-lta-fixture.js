@@ -16,6 +16,8 @@ const MAX_ROUTE_PAGES = 100;
 const MAX_SERVICE_PAGES = 8;
 const BUS_SEARCH_RADIUS_METRES = 600;
 const CONNECTOR_MAX_DISTANCE_METRES = 3500;
+const CONNECTOR_STATION_LIMIT = 8;
+const MAX_NEARBY_STOPS = 6;
 
 async function fetchCollection(url, apiKey, maxPages, service, validate) {
   const rows = [];
@@ -48,11 +50,78 @@ function routePatternKey(row) {
   return `${String(row.ServiceNo || '').trim()}|${Number(row.Direction)}`;
 }
 
+function nearbyCandidateStops(stopRows, point) {
+  return stopRows
+    .map((stop) => ({
+      stopCode: String(stop.BusStopCode),
+      roadName: stop.RoadName || '',
+      name: stop.Description || stop.RoadName || `Bus stop ${stop.BusStopCode}`,
+      lat: Number(stop.Latitude),
+      lng: Number(stop.Longitude),
+      distanceMetres: Math.round(trainSchedule.distanceMetres(
+        point.lat,
+        point.lng,
+        Number(stop.Latitude),
+        Number(stop.Longitude),
+      )),
+    }))
+    .filter((stop) => Number.isFinite(stop.distanceMetres) && stop.distanceMetres <= BUS_SEARCH_RADIUS_METRES)
+    .sort((left, right) => left.distanceMetres - right.distanceMetres)
+    .slice(0, MAX_NEARBY_STOPS);
+}
+
+function discoveryPairs(schedule, scenario) {
+  const pairs = [{ start: scenario.start, end: scenario.end }];
+  if (!schedule) return pairs;
+
+  trainSchedule.nearestStations(schedule, scenario.start, CONNECTOR_STATION_LIMIT, CONNECTOR_MAX_DISTANCE_METRES)
+    .filter((station) => station.distanceMetres > BUS_SEARCH_RADIUS_METRES)
+    .forEach((station) => pairs.push({ start: scenario.start, end: station }));
+
+  const destinationConnector = trainSchedule.nearestStations(
+    schedule,
+    scenario.end,
+    1,
+    CONNECTOR_MAX_DISTANCE_METRES,
+  )[0];
+  if (destinationConnector && destinationConnector.distanceMetres > BUS_SEARCH_RADIUS_METRES) {
+    pairs.push({ start: destinationConnector, end: scenario.end });
+  }
+  return pairs;
+}
+
+function discoverArrivalStops({ busStops, busRoutes, schedule = null, scenarios = SCENARIOS } = {}) {
+  const stopCodes = new Set();
+  scenarios.forEach((scenario) => {
+    discoveryPairs(schedule, scenario).forEach((pair) => {
+      const originStops = nearbyCandidateStops(busStops, pair.start);
+      const destinationStops = nearbyCandidateStops(busStops, pair.end);
+      if (!originStops.length || !destinationStops.length) return;
+
+      const candidates = [
+        ...router.directCandidates(busRoutes, originStops, destinationStops),
+        ...router.oneTransferCandidates(busRoutes, originStops, destinationStops),
+      ];
+      candidates.forEach((candidate) => {
+        if (candidate.board?.stopCode) stopCodes.add(String(candidate.board.stopCode));
+        if (candidate.transfer?.stopCode) stopCodes.add(String(candidate.transfer.stopCode));
+      });
+    });
+  });
+  return [...stopCodes];
+}
+
+function normalizeStopCodes(stopCodes = []) {
+  return [...new Set(stopCodes
+    .map((stopCode) => String(stopCode).trim())
+    .filter(Boolean))];
+}
+
 function selectStaticNetwork({ busStops, busRoutes, busServices, schedule, scenarios = SCENARIOS }) {
   const points = [];
   scenarios.forEach((scenario) => {
     points.push(scenario.start, scenario.end);
-    trainSchedule.nearestStations(schedule, scenario.start, 8, CONNECTOR_MAX_DISTANCE_METRES).forEach((station) => points.push(station));
+    trainSchedule.nearestStations(schedule, scenario.start, CONNECTOR_STATION_LIMIT, CONNECTOR_MAX_DISTANCE_METRES).forEach((station) => points.push(station));
     trainSchedule.nearestStations(schedule, scenario.end, 1, CONNECTOR_MAX_DISTANCE_METRES).forEach((station) => points.push(station));
   });
 
@@ -108,8 +177,15 @@ async function captureFixture({ apiKey = process.env.LTA_API_KEY, arrivalStops =
   const selected = fullStatic
     ? { busStops, busRoutes, busServices, scope: { fullStatic: true } }
     : selectStaticNetwork({ busStops, busRoutes, busServices, schedule: parsedSchedule, scenarios });
+  const discoveredArrivalStops = discoverArrivalStops({
+    busStops: selected.busStops,
+    busRoutes: selected.busRoutes,
+    schedule: parsedSchedule,
+    scenarios,
+  });
+  const capturedArrivalStops = normalizeStopCodes([...arrivalStops, ...discoveredArrivalStops]);
   const busArrivals = {};
-  for (const stopCode of arrivalStops) busArrivals[String(stopCode)] = await fetchArrivals(stopCode, apiKey);
+  for (const stopCode of capturedArrivalStops) busArrivals[stopCode] = await fetchArrivals(stopCode, apiKey);
   const result = fixture.createFixture({
     requestedDate,
     busStops: selected.busStops,
@@ -118,7 +194,11 @@ async function captureFixture({ apiKey = process.env.LTA_API_KEY, arrivalStops =
     busArrivals,
     trainSchedule: parsedSchedule,
   });
-  result.scope = selected.scope;
+  result.scope = {
+    ...selected.scope,
+    arrivalStops: capturedArrivalStops.length,
+    discoveredArrivalStops: discoveredArrivalStops.length,
+  };
   return result;
 }
 
@@ -163,7 +243,7 @@ function helpText() {
     '',
     '  --output FILE          Fixture path; .json.gz is compressed (default: dated fixture)',
     '  --date YYYY-MM-DD      Date label stored in the fixture',
-    '  --stops CODE,CODE      BusArrival stops to capture',
+    '  --stops CODE,CODE      Additional BusArrival stops to capture',
     '  --full-static          Keep every static BusStops/BusRoutes/BusServices row',
     '  --force                Replace an existing fixture',
   ].join('\n');
@@ -189,4 +269,13 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fetchCollection, fetchArrivals, selectStaticNetwork, captureFixture, parseArgs, helpText };
+module.exports = {
+  fetchCollection,
+  fetchArrivals,
+  selectStaticNetwork,
+  discoverArrivalStops,
+  normalizeStopCodes,
+  captureFixture,
+  parseArgs,
+  helpText,
+};

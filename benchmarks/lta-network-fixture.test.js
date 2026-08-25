@@ -69,6 +69,7 @@ test('round-trips compressed source fixtures and exposes injectable providers', 
   const filePath = path.join(tempDir, 'fixture.json.gz');
   try {
     fixture.writeFixture(filePath, saved);
+    assert.equal(fs.readFileSync(filePath).readUInt16LE(0), 0x8b1f);
     const loaded = fixture.readFixture(filePath);
     const providers = fixture.createProviders(loaded);
     const arrivals = await providers.arrivalProvider({ stopCode: '65029', now });
@@ -81,6 +82,29 @@ test('round-trips compressed source fixtures and exposes injectable providers', 
   }
 });
 
+test('fails explicitly when a replay requests an uncaptured arrival stop', async () => {
+  const now = Date.parse('2026-08-25T08:00:00+08:00');
+  const providers = fixture.createProviders(networkFixture(now));
+  await assert.rejects(
+    providers.arrivalProvider({ stopCode: '70289', now }),
+    /missing BusArrival data for stop 70289/,
+  );
+});
+
+test('fails the offline route replay when required arrival data is missing', async () => {
+  const network = networkFixture(Date.parse('2026-08-25T08:00:00+08:00'));
+  network.busArrivals = {};
+  await assert.rejects(
+    fixtureReplay.runFixtureRoute(
+      network,
+      { start: { lat: 1.383486, lng: 103.900782 }, end: { lat: 1.335142, lng: 103.888389 } },
+      '2026-08-25',
+      '08:00',
+    ),
+    /missing BusArrival data for stop\(s\): 65029/,
+  );
+});
+
 test('runs the bus router offline from raw fixture inputs without an LTA key', async () => {
   const now = Date.parse('2026-08-25T08:00:00+08:00');
   const providers = fixture.createProviders(networkFixture(now));
@@ -91,10 +115,17 @@ test('runs the bus router offline from raw fixture inputs without an LTA key', a
     json(body) { result.body = body; return body; },
   };
   const handler = require('../api/realtime-route');
-  await handler({
-    url: '/api/realtime-route?start=1.383486,103.900782&end=1.335142,103.888389&includeSchedule=1',
-    _benchmark: { ...providers, nowMs: now },
-  }, response);
+  const previousApiKey = process.env.LTA_API_KEY;
+  delete process.env.LTA_API_KEY;
+  try {
+    await handler({
+      url: '/api/realtime-route?start=1.383486,103.900782&end=1.335142,103.888389&includeSchedule=1',
+      _benchmark: { ...providers, nowMs: now },
+    }, response);
+  } finally {
+    if (previousApiKey === undefined) delete process.env.LTA_API_KEY;
+    else process.env.LTA_API_KEY = previousApiKey;
+  }
   assert.equal(result.status, 200);
   assert.equal(result.body.candidates[0].serviceNo, '80');
   assert.equal(result.body.candidates[0].liveStatus, 'ready');
@@ -112,10 +143,81 @@ test('replays scheduled rail from the same source fixture seam', async () => {
   assert.equal(result.body.rail.candidate.legs[0].routeId, 'R1');
 });
 
+test('uses fixture capture time for live arrivals while requested time drives scheduled rail', async () => {
+  const capturedAt = '2026-08-25T09:36:29.315Z';
+  const network = networkFixture(Date.parse(capturedAt));
+  network.capturedAt = capturedAt;
+  const busResult = await fixtureReplay.runFixtureRoute(
+    network,
+    { start: { lat: 1.383486, lng: 103.900782 }, end: { lat: 1.335142, lng: 103.888389 } },
+    '2026-08-25',
+    '08:00',
+  );
+  assert.equal(busResult.body.bus.candidates[0].arrivals[0], 4);
+
+  const railResult = await fixtureReplay.runFixtureRoute(
+    network,
+    { start: { lat: 1.30, lng: 103.80 }, end: { lat: 1.33, lng: 103.83 } },
+    '2026-08-25',
+    '08:00',
+  );
+  assert.equal(railResult.body.rail.candidate.legs[0].routeId, 'R1');
+});
+
+test('requires a valid fixture capture timestamp for offline replay', () => {
+  assert.throws(() => fixtureReplay.captureTimestampMs({}), /capturedAt must be a valid timestamp/);
+  assert.throws(() => fixtureReplay.captureTimestampMs({ capturedAt: 'not-a-timestamp' }), /capturedAt must be a valid timestamp/);
+});
+
 test('keeps the raw arrival payload validator available for capture tools', () => {
   assert.equal(realtimeRoute.isBusArrivalPayload({ Services: [] }), true);
   assert.equal(realtimeRoute.isBusArrivalPayload({ Services: {} }), false);
   assert.equal(trainSchedule.clockFromIso('2026-08-25T08:00:00+08:00').seconds, 8 * 3600);
+});
+
+test('keeps capture output compressed by default and explicit stops additive', () => {
+  const options = capture.parseArgs(['--stops', '65029,77009']);
+  assert.match(options.output, /\.json\.gz$/);
+  assert.deepEqual(options.arrivalStops, ['65029', '77009']);
+  assert.match(capture.helpText(), /Additional BusArrival stops/);
+});
+
+test('discovers candidate boarding and transfer stops from selected static routes', () => {
+  const network = networkFixture(Date.parse('2026-08-25T08:00:00+08:00'));
+  const discovered = capture.discoverArrivalStops({
+    busStops: network.busStops,
+    busRoutes: [
+      { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '65029', Distance: 0 },
+      { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '70289', Distance: 8 },
+      { ServiceNo: '82', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '65029', Distance: 0 },
+      { ServiceNo: '82', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '77009', Distance: 3 },
+      { ServiceNo: '3', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '77009', Distance: 0 },
+      { ServiceNo: '3', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '70289', Distance: 4 },
+    ],
+    scenarios: [{ start: { lat: 1.383486, lng: 103.900782 }, end: { lat: 1.335142, lng: 103.888389 } }],
+  });
+  assert.deepEqual(discovered, ['65029', '77009']);
+});
+
+test('discovers boarding and transfer stops for station connector subroutes', () => {
+  const discovered = capture.discoverArrivalStops({
+    busStops: [
+      { BusStopCode: '65029', RoadName: 'Fixture Road', Description: 'Fixture origin', Latitude: '1.30', Longitude: '103.80' },
+      { BusStopCode: '77009', RoadName: 'Fixture Road', Description: 'Connector station', Latitude: '1.33', Longitude: '103.83' },
+      { BusStopCode: '70289', RoadName: 'Fixture Road', Description: 'Fixture destination', Latitude: '1.34', Longitude: '103.84' },
+    ],
+    busRoutes: [
+      { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '65029', Distance: 0 },
+      { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '70289', Distance: 8 },
+      { ServiceNo: '90', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '77009', Distance: 0 },
+      { ServiceNo: '90', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '67169', Distance: 3 },
+      { ServiceNo: '91', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '67169', Distance: 0 },
+      { ServiceNo: '91', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '70289', Distance: 4 },
+    ],
+    schedule: scheduleFixture(),
+    scenarios: [{ start: { lat: 1.30, lng: 103.80 }, end: { lat: 1.34, lng: 103.84 } }],
+  });
+  assert.deepEqual(discovered, ['65029', '77009', '67169']);
 });
 
 test('limits static capture to the fixed journey neighbourhood by default', () => {

@@ -82,15 +82,19 @@ function createFixture({ capturedAt = new Date().toISOString(), requestedDate = 
   });
 }
 
-function createProviders(fixture) {
+function createProviders(fixture, { onMissingArrival } = {}) {
   const validated = validateFixture(fixture);
   return {
     stopsProvider: async () => cloneJson(validated.busStops),
     routesProvider: async () => cloneJson(validated.busRoutes),
     serviceScheduleProvider: async () => busServiceSchedule.normalizedServiceMap(cloneJson(validated.busServices)),
     arrivalProvider: async ({ stopCode, now }) => {
-      const payload = validated.busArrivals[String(stopCode)];
-      if (!payload) return new Map();
+      const key = String(stopCode);
+      if (!Object.prototype.hasOwnProperty.call(validated.busArrivals, key)) {
+        if (typeof onMissingArrival === 'function') onMissingArrival(key);
+        throw new Error(`LTA network fixture is missing BusArrival data for stop ${key}.`);
+      }
+      const payload = validated.busArrivals[key];
       return realtimeRoute.normalizeArrivalPayload(payload, now);
     },
     scheduleProvider: async () => deserializeTrainSchedule(validated.trainSchedule),
