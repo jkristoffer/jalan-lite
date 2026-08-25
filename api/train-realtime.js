@@ -1,4 +1,5 @@
 const { inflateRawSync } = require('node:zlib');
+const { fetchBytes, safeUpstreamFailure } = require('./_upstream');
 
 const TRIP_UPDATES_URL = 'https://datamall.lta.gov.sg/content/dam/datamall/datasets/PublicTransportRelated/GTFSRealtimeTrainTripUpdates.zip';
 const SERVICE_ALERTS_URL = 'https://datamall.lta.gov.sg/content/dam/datamall/datasets/PublicTransportRelated/GTFSRealTimeTrainServiceAlerts.zip';
@@ -93,6 +94,7 @@ function fieldsOf(bytes) {
       fields.push({ number, wire, value: value.value });
       offset = value.offset;
     } else if (wire === 1) {
+      if (offset + 8 > bytes.length) throw new Error('Invalid protobuf fixed64 field.');
       fields.push({ number, wire, value: bytes.slice(offset, offset + 8) });
       offset += 8;
     } else if (wire === 2) {
@@ -103,6 +105,7 @@ function fieldsOf(bytes) {
       fields.push({ number, wire, value: bytes.slice(offset, end) });
       offset = end;
     } else if (wire === 5) {
+      if (offset + 4 > bytes.length) throw new Error('Invalid protobuf fixed32 field.');
       fields.push({ number, wire, value: bytes.slice(offset, offset + 4) });
       offset += 4;
     } else if (wire === 4) {
@@ -174,7 +177,7 @@ function parseStopTimeUpdate(bytes) {
 }
 
 function parseTripUpdate(bytes) {
-  if (!bytes) return {};
+  if (!bytes) return null;
   const fields = fieldsOf(bytes);
   const trip = parseTripDescriptor(messageValue(first(fields, 1, 2)));
   return {
@@ -193,7 +196,7 @@ function parseTranslation(bytes) {
 }
 
 function parseAlert(bytes) {
-  if (!bytes) return {};
+  if (!bytes) return null;
   const fields = fieldsOf(bytes);
   const selectors = all(fields, 5, 2).map((field) => {
     const selector = fieldsOf(field.value);
@@ -213,20 +216,33 @@ function parseAlert(bytes) {
 }
 
 function parseFeed(bytes, kind) {
+  if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error('Empty GTFS-Realtime feed.');
+  if (kind !== 'trips' && kind !== 'alerts') throw new Error('Unknown GTFS-Realtime feed type.');
   const fields = fieldsOf(bytes);
   const header = messageValue(first(fields, 1, 2));
-  const headerFields = header ? fieldsOf(header) : [];
+  if (!header) throw new Error('Missing GTFS-Realtime feed header.');
+  const headerFields = fieldsOf(header);
+  const version = stringValue(first(headerFields, 1, 2));
+  if (!version) throw new Error('Missing GTFS-Realtime feed version.');
   const timestamp = first(headerFields, 3, 0) ? Number(first(headerFields, 3, 0).value) * 1000 : 0;
   const entities = all(fields, 2, 2).map((field) => {
     const entityFields = fieldsOf(field.value);
-    return {
+    const entity = {
       id: stringValue(first(entityFields, 1, 2)),
       deleted: Boolean(numberValue(first(entityFields, 2, 0))),
       tripUpdate: kind === 'trips' ? parseTripUpdate(messageValue(first(entityFields, 3, 2))) : null,
       alert: kind === 'alerts' ? parseAlert(messageValue(first(entityFields, 5, 2))) : null,
     };
+    if (!entity.id) throw new Error('GTFS-Realtime entity is missing an id.');
+    if (!entity.deleted && kind === 'trips' && (!entity.tripUpdate || (!entity.tripUpdate.tripId && !entity.tripUpdate.routeId))) {
+      throw new Error('GTFS-Realtime trip entity is missing required fields.');
+    }
+    if (!entity.deleted && kind === 'alerts' && (!entity.alert || (!entity.alert.header && !entity.alert.description && !entity.alert.selectors.length))) {
+      throw new Error('GTFS-Realtime alert entity is missing required fields.');
+    }
+    return entity;
   });
-  return { timestamp, entities };
+  return { timestamp, entities, version };
 }
 
 function canonicalLine(value) {
@@ -262,9 +278,12 @@ function alertMatch(alert, routes, stops) {
 }
 
 async function fetchFeed(url, apiKey) {
-  const response = await fetch(url, { headers: { AccountKey: apiKey, Accept: 'application/zip, application/octet-stream' } });
-  if (!response.ok) throw new Error(`LTA GTFS-Realtime request failed (${response.status}).`);
-  return new Uint8Array(await response.arrayBuffer());
+  const { bytes } = await fetchBytes(
+    url,
+    { headers: { AccountKey: apiKey, Accept: 'application/zip, application/octet-stream' } },
+    { service: 'LTA GTFS-Realtime' },
+  );
+  return bytes;
 }
 
 module.exports = async function handler(req, res) {
@@ -275,14 +294,22 @@ module.exports = async function handler(req, res) {
     const requestUrl = new URL(req.url, 'https://jalan.local');
     const routes = csv(requestUrl.searchParams.get('routes'));
     const stops = csv(requestUrl.searchParams.get('stops'));
-    const [tripResult, alertResult] = await Promise.all([
-      fetchFeed(TRIP_UPDATES_URL, apiKey).then((bytes) => parseFeed(unzipFirst(bytes), 'trips')),
-      fetchFeed(SERVICE_ALERTS_URL, apiKey).then((bytes) => parseFeed(unzipFirst(bytes), 'alerts')).catch(() => ({ timestamp: 0, entities: [] })),
-    ]);
+    const tripBytes = await fetchFeed(TRIP_UPDATES_URL, apiKey);
+    const tripResult = parseFeed(unzipFirst(tripBytes), 'trips');
+    let alertResult = { timestamp: 0, entities: [], available: false };
+    try {
+      const alertBytes = await fetchFeed(SERVICE_ALERTS_URL, apiKey);
+      alertResult = { ...parseFeed(unzipFirst(alertBytes), 'alerts'), available: true };
+    } catch (error) {
+      safeUpstreamFailure(error);
+    }
     const updates = tripResult.entities.filter((entity) => entity.tripUpdate && !entity.deleted && queryMatch(entity.tripUpdate, routes, stops)).map((entity) => ({ id: entity.id, ...entity.tripUpdate }));
     const alerts = alertResult.entities.filter((entity) => entity.alert && !entity.deleted && alertMatch(entity.alert, routes, stops)).map((entity) => ({ id: entity.id, ...entity.alert }));
-    return res.status(200).json({ source: 'LTA GTFS-Realtime', feedTimestamp: tripResult.timestamp || alertResult.timestamp || 0, updatedAt: new Date().toISOString(), updates: updates.slice(0, 800), alerts: alerts.slice(0, 100) });
+    return res.status(200).json({ source: 'LTA GTFS-Realtime', feedTimestamp: tripResult.timestamp || alertResult.timestamp || 0, alertsAvailable: alertResult.available, updatedAt: new Date().toISOString(), updates: updates.slice(0, 800), alerts: alerts.slice(0, 100) });
   } catch (error) {
-    return res.status(502).json({ error: error instanceof Error ? error.message : 'Unable to load LTA train realtime.' });
+    safeUpstreamFailure(error);
+    return res.status(502).json({ error: 'LTA train realtime is temporarily unavailable.' });
   }
 };
+
+module.exports._test = { parseFeed, unzipFirst, fetchFeed };

@@ -1,3 +1,6 @@
+
+const { fetchJson, safeUpstreamFailure } = require('./_upstream');
+
 const LTA_URL = 'https://datamall2.mytransport.sg/ltaodataservice/BusStops';
 const PAGE_SIZE = 500;
 const MAX_PAGES = 20;
@@ -6,6 +9,21 @@ const CACHE_MS = 12 * 60 * 60 * 1000;
 let cachedStops = null;
 let cachedAt = 0;
 let loadingStops = null;
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isBusStop(value) {
+  return isRecord(value)
+    && /^\d{5}$/.test(String(value.BusStopCode || ''))
+    && Number.isFinite(Number(value.Latitude))
+    && Number.isFinite(Number(value.Longitude));
+}
+
+function isBusStopsPayload(value) {
+  return isRecord(value) && Array.isArray(value.value) && value.value.every(isBusStop);
+}
 
 function distanceMetres(lat1, lon1, lat2, lon2) {
   const rad = Math.PI / 180;
@@ -19,12 +37,12 @@ function distanceMetres(lat1, lon1, lat2, lon2) {
 async function fetchPage(apiKey, page) {
   const url = new URL(LTA_URL);
   url.searchParams.set('$skip', String(page * PAGE_SIZE));
-  const response = await fetch(url, {
-    headers: { AccountKey: apiKey, Accept: 'application/json' },
-  });
-  if (!response.ok) throw new Error(`LTA BusStops request failed (${response.status}).`);
-  const payload = await response.json();
-  return payload.value || [];
+  const { data } = await fetchJson(
+    url,
+    { headers: { AccountKey: apiKey, Accept: 'application/json' } },
+    { service: 'LTA BusStops', validate: isBusStopsPayload },
+  );
+  return data.value;
 }
 
 async function buildStopCache(apiKey) {
@@ -45,7 +63,7 @@ async function buildStopCache(apiKey) {
     if (second.value.length < PAGE_SIZE) break;
   }
 
-  cachedStops = all.filter((stop) => stop.BusStopCode && stop.Latitude && stop.Longitude);
+  cachedStops = all;
   cachedAt = Date.now();
   return cachedStops;
 }
@@ -60,7 +78,7 @@ async function loadStops(apiKey) {
   return loadingStops;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');
 
   try {
@@ -81,9 +99,9 @@ export default async function handler(req, res) {
     const stops = await loadStops(apiKey);
     const nearby = stops
       .map((stop) => ({
-        stopCode: stop.BusStopCode,
+        stopCode: String(stop.BusStopCode),
         roadName: stop.RoadName || '',
-        name: stop.Description || stop.RoadName || `Bus stop ${stop.BusStopCode}`,
+        name: stop.Description || stop.RoadName || 'Bus stop ' + stop.BusStopCode,
         lat: Number(stop.Latitude),
         lng: Number(stop.Longitude),
         distance: Math.round(distanceMetres(lat, lng, Number(stop.Latitude), Number(stop.Longitude))),
@@ -94,6 +112,9 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ nearby, updatedAt: new Date().toISOString() });
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unexpected error.' });
+    safeUpstreamFailure(error);
+    return res.status(502).json({ error: 'Nearby bus stops are temporarily unavailable.' });
   }
-}
+};
+
+module.exports._test = { isBusStopsPayload };

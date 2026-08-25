@@ -1,4 +1,28 @@
+
+const { fetchJson, safeUpstreamFailure } = require('./_upstream');
+
 const LTA_URL = 'https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival';
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isBusObject(value) {
+  return value === null || (isRecord(value)
+    && (value.EstimatedArrival === undefined || typeof value.EstimatedArrival === 'string')
+    && (value.Monitored === undefined || typeof value.Monitored === 'string'));
+}
+
+function isBusArrivalPayload(value) {
+  return isRecord(value)
+    && Array.isArray(value.Services)
+    && value.Services.every((service) => isRecord(service)
+      && typeof service.ServiceNo === 'string'
+      && service.ServiceNo.trim().length > 0
+      && isBusObject(service.NextBus)
+      && isBusObject(service.NextBus2)
+      && isBusObject(service.NextBus3));
+}
 
 function minutesUntil(value) {
   if (!value) return null;
@@ -14,7 +38,7 @@ function loadLabel(load) {
   return '';
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=15');
 
   try {
@@ -30,27 +54,20 @@ export default async function handler(req, res) {
     }
 
     const apiKey = process.env.LTA_API_KEY;
-    if (!apiKey) {
-      return res.status(503).json({ error: 'LTA_API_KEY is not configured.' });
-    }
+    if (!apiKey) return res.status(503).json({ error: 'LTA_API_KEY is not configured.' });
 
     const ltaUrl = new URL(LTA_URL);
     ltaUrl.searchParams.set('BusStopCode', stopCode);
+    const { data: payload } = await fetchJson(
+      ltaUrl,
+      { headers: { AccountKey: apiKey, Accept: 'application/json' } },
+      { service: 'LTA BusArrival', validate: isBusArrivalPayload },
+    );
 
-    const response = await fetch(ltaUrl, {
-      headers: { AccountKey: apiKey, Accept: 'application/json' },
-    });
-
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 300);
-      return res.status(502).json({ error: `LTA request failed (${response.status}).`, detail });
-    }
-
-    const payload = await response.json();
-    const services = (payload.Services || []).map((service) => {
+    const services = payload.Services.map((service) => {
       const buses = [service.NextBus, service.NextBus2, service.NextBus3];
       return {
-        serviceNo: service.ServiceNo,
+        serviceNo: service.ServiceNo.trim(),
         operator: service.Operator || '',
         load: loadLabel(service.NextBus?.Load),
         arrivals: buses.map((bus) => minutesUntil(bus?.EstimatedArrival)),
@@ -71,6 +88,9 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ stopCode, updatedAt: new Date().toISOString(), services: ordered });
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unexpected error.' });
+    safeUpstreamFailure(error);
+    return res.status(502).json({ error: 'LTA bus arrivals are temporarily unavailable.' });
   }
-}
+};
+
+module.exports._test = { isBusArrivalPayload };
