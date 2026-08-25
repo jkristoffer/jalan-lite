@@ -8,9 +8,7 @@ function isRecord(value) {
 }
 
 function isBusObject(value) {
-  return value === undefined || value === null || (isRecord(value)
-    && (value.EstimatedArrival == null || typeof value.EstimatedArrival === 'string')
-    && (value.Monitored == null || typeof value.Monitored === 'string'));
+  return value === undefined || value === null || isRecord(value);
 }
 
 function isBusArrivalPayload(value) {

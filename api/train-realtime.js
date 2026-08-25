@@ -1,4 +1,4 @@
-const { inflateRawSync } = require('node:zlib');
+const { inflateRawSync, gunzipSync } = require('node:zlib');
 const { fetchBytes, safeUpstreamFailure } = require('./_upstream');
 
 const TRIP_UPDATES_URL = 'https://datamall.lta.gov.sg/content/dam/datamall/datasets/PublicTransportRelated/GTFSRealtimeTrainTripUpdates.zip';
@@ -43,8 +43,9 @@ function unzipFirst(bytes) {
     const isFeedEntry = /\.(?:pb|bin)(?:\.gz)?$/i.test(name) || /trip.*update|service.*alert/i.test(name);
     if (!name.endsWith('/') && isFeedEntry && compressedSize >= 0 && dataStart + compressedSize <= bytes.length) {
       const payload = bytes.slice(dataStart, dataStart + compressedSize);
-      if (method === 0) return payload;
-      if (method === 8) return new Uint8Array(inflateRawSync(payload));
+      const decoded = method === 0 ? payload : method === 8 ? new Uint8Array(inflateRawSync(payload)) : null;
+      if (decoded && /\.gz$/i.test(name)) return new Uint8Array(gunzipSync(decoded));
+      if (decoded) return decoded;
     }
 
     const nextEntry = dataStart + compressedSize;
