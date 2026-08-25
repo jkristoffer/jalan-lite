@@ -688,6 +688,17 @@
     if (dashboardPane === 'route') requestInlineRouteMap();
   }
 
+  function routeMapPanel() {
+    const ready = Boolean(routeState.data);
+    const heading = routeState.status === 'error' ? 'Map unavailable' : ready ? 'Route map' : 'Preparing route map';
+    const detail = routeState.status === 'error' ? 'The journey timeline is still available below.' : ready ? 'Tap a leg to focus it.' : 'The map will appear once the route is ready.';
+    return '<div class="route-inline-map-sticky"><div class="route-inline-map-heading"><span class="route-card-label">Route map</span><span class="route-inline-map-hint">Tap a leg to focus</span></div><div class="route-inline-map-wrap"><div id="route-inline-map" class="route-inline-map" role="img" aria-label="Route map"></div><div id="route-inline-fallback" class="map-fallback"' + (ready ? ' hidden' : '') + '><strong>' + escapeHtml(heading) + '</strong><span>' + escapeHtml(detail) + '</span></div></div></div>';
+  }
+
+  function dashboard() {
+    return '<div class="route-panel dashboard-mode"><div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Your commute</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>' + dashboardNav() + routeNotice() + dashboardAlert() + '<div id="dashboard-pager" class="dashboard-pager" aria-label="Commute content"><div class="dashboard-track"><section id="dashboard-pane-now" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-now">' + journeyHero() + '</section><section id="dashboard-pane-route" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-route">' + routeMapPanel() + card() + '</section><section id="dashboard-pane-live" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-live">' + timingCard() + notificationsCard() + routeActions() + '</section></div></div></div>';
+  }
+
   function demoTimeline(rerouted) {
     const legs = rerouted ? [
       { mode: 'WALK', title: 'Walk to Paya Lebar MRT', meta: '320 m · 4 min', times: '8:30 → 8:34' },
