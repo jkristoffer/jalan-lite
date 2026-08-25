@@ -33,6 +33,8 @@
   let focusWakeLock = null;
   let temporalTimer = null;
   let dashboardPane = 'now';
+  let dashboardScrollUnlockTimer = null;
+  let dismissedNotice = '';
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -153,9 +155,9 @@
     const focusButton = routeState.data
       ? `<button id='journey-hero-focus' class='focus-launch-button journey-hero-focus' data-route-action='focus'${state.isStale || routeState.status === 'rerouting' ? ' hidden' : ''}>Focus mode</button>`
       : '';
-    const notice = routeState.notice ? `<div class='journey-hero-notice' role='status'>${escapeHtml(routeState.notice)}</div>` : '';
-    return `<section class='journey-hero'>${journey()}${temporalCard()}${notice}${focusButton}</section>`;
+    return '<section class="journey-hero">' + journey() + temporalCard() + focusButton + '</section>';
   }
+
   function timing(leg) {
     if (leg.mode === 'BUS' && leg.live?.arrivals) {
       const arrivals = leg.live.arrivals.filter(Number.isFinite).slice(0, 3);
@@ -474,7 +476,7 @@
     if (!itinerary) return '';
     const rerouting = routeState.status === 'rerouting' ? '<div class="route-rerouting" role="status">Recalculating with the latest route data…</div>' : '';
     const notice = routeState.notice ? `<div class="route-inline-notice" role="status">${escapeHtml(routeState.notice)}</div>` : '';
-    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2><p class="route-card-helper">Tap a journey leg to see it on the map.</p></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
+    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2><p class="route-card-helper">Tap a journey leg to see it on the map.</p></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}</section>`;
   }
 
   function temporalCard() {
@@ -578,6 +580,12 @@
     return (routeState.data?.liveAlerts || []).filter((alert) => alert.header || alert.description);
   }
 
+  function routeNotice() {
+    const notice = routeState.notice;
+    if (!notice || notice === dismissedNotice) return '';
+    return '<div class="floating-route-notice" role="status" aria-live="polite"><span>' + escapeHtml(notice) + '</span><button type="button" class="floating-route-notice-dismiss" aria-label="Dismiss route notice" data-route-action="dismiss-notice">×</button></div>';
+  }
+
   function dashboardAlert() {
     const alerts = dashboardAlerts();
     if (!alerts.length) return '';
@@ -624,35 +632,62 @@
     });
   }
 
+  function clearDashboardScrollUnlock() {
+    if (dashboardScrollUnlockTimer) window.clearTimeout(dashboardScrollUnlockTimer);
+    dashboardScrollUnlockTimer = null;
+  }
+
   function syncDashboardPager() {
     const pager = document.getElementById('dashboard-pager');
     if (!pager) return;
-    const moveToActive = () => { pager.scrollLeft = pager.clientWidth * dashboardPaneIndex(dashboardPane); };
-    moveToActive();
+    clearDashboardScrollUnlock();
+    const panes = ['now', 'route', 'live'];
+    pager.scrollLeft = pager.clientWidth * dashboardPaneIndex(dashboardPane);
     updateDashboardNavDom();
     let scrollTimer = null;
+    const syncFromScroll = () => {
+      scrollTimer = null;
+      if (dashboardScrollUnlockTimer) return;
+      const index = Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth));
+      dashboardPane = panes[Math.max(0, Math.min(panes.length - 1, index))];
+      updateDashboardNavDom();
+      if (dashboardPane === 'route') requestInlineRouteMap();
+    };
     pager.addEventListener('scroll', () => {
-      if (scrollTimer) return;
-      scrollTimer = window.setTimeout(() => {
-        scrollTimer = null;
-        const index = Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth));
-        const panes = ['now', 'route', 'live'];
-        dashboardPane = panes[Math.max(0, Math.min(panes.length - 1, index))];
-        updateDashboardNavDom();
-      }, 80);
+      if (dashboardScrollUnlockTimer) return;
+      if (scrollTimer) window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(syncFromScroll, 120);
     }, { passive: true });
+  }
+
+  function requestInlineRouteMap() {
+    if (dashboardPane !== 'route' || !saved || !routeState.data || viewing || focusMode || pickerField || disruptionDemoOpen) return;
+    const container = document.getElementById('route-inline-map');
+    if (!container) return;
+    if (map) {
+      window.requestAnimationFrame(() => { if (map) map.resize(); });
+      return;
+    }
+    window.requestAnimationFrame(() => renderInlineRouteMap());
   }
 
   function setDashboardPane(pane) {
     dashboardPane = ['now', 'route', 'live'].includes(pane) ? pane : 'now';
     updateDashboardNavDom();
     const pager = document.getElementById('dashboard-pager');
-    if (pager) pager.scrollTo({ left: pager.clientWidth * dashboardPaneIndex(dashboardPane), behavior: 'smooth' });
+    if (pager) {
+      clearDashboardScrollUnlock();
+      const target = pager.clientWidth * dashboardPaneIndex(dashboardPane);
+      dashboardScrollUnlockTimer = window.setTimeout(() => {
+        dashboardScrollUnlockTimer = null;
+        if (Math.abs(pager.scrollLeft - target) > 2) pager.scrollLeft = target;
+        updateDashboardNavDom();
+      }, 500);
+      pager.scrollTo({ left: target, behavior: 'smooth' });
+    }
+    if (dashboardPane === 'route') requestInlineRouteMap();
   }
 
-  function dashboard() {
-    return `<div class='route-panel'>${brand()}<div class='route-header'><div><div class='route-kicker'>Saved commute</div><h1>Your commute</h1></div><button class='route-link compact' data-route-action='edit'>Edit</button></div>${dashboardNav()}${dashboardAlert()}<div id='dashboard-pager' class='dashboard-pager' aria-label='Commute content'><div class='dashboard-track'><section id='dashboard-pane-now' class='dashboard-pane' role='tabpanel' aria-labelledby='dashboard-tab-now'>${journeyHero()}</section><section id='dashboard-pane-route' class='dashboard-pane' role='tabpanel' aria-labelledby='dashboard-tab-route'>${card()}</section><section id='dashboard-pane-live' class='dashboard-pane' role='tabpanel' aria-labelledby='dashboard-tab-live'>${timingCard()}${notificationsCard()}${routeActions()}</section></div></div></div>`;
-  }
   function demoTimeline(rerouted) {
     const legs = rerouted ? [
       { mode: 'WALK', title: 'Walk to Paya Lebar MRT', meta: '320 m · 4 min', times: '8:30 → 8:34' },
@@ -872,11 +907,12 @@
     shell.innerHTML = pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (focusMode ? focusView() : (viewing ? viewer() : (saved ? dashboard() : setup()))));
     bind();
     if (pickerField) requestAnimationFrame(renderPickerMap);
-    if (viewing) requestAnimationFrame(renderViewerMap);
+    if (viewing) requestAnimationFrame(() => renderViewerMap());
     if (saved && !pickerField && !viewing && saved.originPoint && saved.destinationPoint && routeState.status === 'idle') routeData();
     syncLiveRefresh();
     syncTemporalClock();
     syncDashboardPager();
+    requestInlineRouteMap();
   }
 
   function openPicker(field) {
@@ -951,25 +987,26 @@
     return output;
   }
 
-  async function renderViewerMap() {
+  async function renderViewerMap(containerId = 'route-viewer-map', fallbackId = 'viewer-fallback', viewerMode = true) {
     const generation = mapGeneration;
-    const container = document.getElementById('route-viewer-map');
-    const fallback = document.getElementById('viewer-fallback');
+    const container = document.getElementById(containerId);
+    const fallback = document.getElementById(fallbackId);
     const itinerary = routeState.data;
-    if (!container || !itinerary) return;
+    const active = () => viewerMode ? viewing : Boolean(saved && routeState.data && !pickerField && !focusMode && !disruptionDemoOpen);
+    if (!container || !itinerary || !saved?.originPoint) return;
     if (!window.mapboxgl) { fallback.hidden = false; return; }
     try {
       mapboxgl.accessToken = await mapToken();
-      if (generation !== mapGeneration || !viewing || !document.getElementById('route-viewer-map')) return;
+      if (generation !== mapGeneration || !active() || !document.getElementById(containerId)) return;
       const features = itinerary.legs.map((leg, index) => { const coordinates = leg.geometry ? decodePolyline(leg.geometry) : []; return coordinates.length > 1 ? { type: 'Feature', properties: { mode: leg.mode, index }, geometry: { type: 'LineString', coordinates } } : null; }).filter(Boolean);
       const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
       const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
       const nextMap = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [saved.originPoint.lng, saved.originPoint.lat], zoom: 12.5, dragRotate: false, touchPitch: false });
-      if (generation !== mapGeneration || !viewing) { nextMap.remove(); return; }
+      if (generation !== mapGeneration || !active()) { nextMap.remove(); return; }
       map = nextMap;
       nextMap.touchZoomRotate.disableRotation();
       nextMap.on('load', () => {
-        if (generation !== mapGeneration || !viewing || map !== nextMap) return;
+        if (generation !== mapGeneration || !active() || map !== nextMap) return;
         if (features.length) {
           nextMap.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features } });
           const opacity = selectedLeg ? 0.22 : 0.88;
@@ -1001,6 +1038,10 @@
       });
       nextMap.on('error', () => { if (generation === mapGeneration && fallback) fallback.hidden = false; });
     } catch { if (generation === mapGeneration && fallback) fallback.hidden = false; }
+  }
+
+  function renderInlineRouteMap() {
+    return renderViewerMap('route-inline-map', 'route-inline-fallback', false);
   }
 
   async function manualLocation() {
@@ -1185,6 +1226,7 @@
     if (preserveCurrent && routeState.status === 'rerouting') return;
     const previous = (preserveCurrent || fromNow) ? routeState.data : null;
     const previousLiveState = snapshotLiveState(previous);
+    dismissedNotice = '';
     const request = routeRequests.start();
     liveRequests.abort();
     liveRefreshInFlight = false;
@@ -1274,6 +1316,7 @@
         else if (action === 'manual') manualLocation();
         else if (action === 'locate') locate();
         else if (action === 'dashboard-pane') setDashboardPane(button.dataset.dashboardPane);
+        else if (action === 'dismiss-notice') { dismissedNotice = routeState.notice || ''; button.closest('.floating-route-notice')?.remove(); }
         else if (action === 'refresh-now') routeData({ fromNow: true });
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'refresh-live') refreshLiveTimings();
@@ -1281,10 +1324,10 @@
         else if (action === 'exit-focus') exitFocusMode();
         else if (action === 'notifications') enableNotifications();
         else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
-        else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; viewing = true; render(); } }
+        else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; dashboardPane = 'route'; render(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
         else if (action === 'reroute') routeData({ preserveCurrent: true });
-        else if (action === 'viewer' && routeState.data) { selectedLegIndex = null; viewing = true; render(); }
+        else if (action === 'viewer' && routeState.data) { selectedLegIndex = null; setDashboardPane('route'); }
         else if (action === 'close-viewer') { viewing = false; selectedLegIndex = null; render(); refreshLiveTimings(); }
       };
     });
