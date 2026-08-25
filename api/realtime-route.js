@@ -1,4 +1,5 @@
 const nearbyStopsApi = require('./nearby-stops');
+const busServiceSchedule = require('./bus-service-schedule');
 const { UpstreamError, createTimeoutSignal, fetchJson, safeUpstreamFailure } = require('./_upstream');
 
 const LTA_BUS_ROUTES_URL = 'https://datamall2.mytransport.sg/ltaodataservice/BusRoutes';
@@ -153,6 +154,7 @@ function normalizedRouteRow(row) {
     sequence: Number(row.StopSequence),
     stopCode: String(row.BusStopCode),
     distanceKm: Number(row.Distance),
+    operatingWindow: busServiceSchedule.normalizeOperatingWindow(row),
   };
 }
 
@@ -219,6 +221,7 @@ function directCandidates(routeRows, originStops, destinationStops) {
             alightStopCode: alight.stop.stopCode,
             rideStops,
             routeDistanceKm: Number(routeDistanceKm.toFixed(2)),
+            ...(board.operatingWindow ? { operatingWindow: board.operatingWindow } : {}),
           }],
         });
       });
@@ -308,6 +311,7 @@ function oneTransferCandidates(routeRows, originStops, destinationStops) {
                 alightStopCode: firstTransfer.stopCode,
                 rideStops: firstRideStops,
                 routeDistanceKm: Number(firstDistanceKm.toFixed(2)),
+                ...(board.row.operatingWindow ? { operatingWindow: board.row.operatingWindow } : {}),
               },
               {
                 serviceNo: alight.pattern.serviceNo,
@@ -317,6 +321,7 @@ function oneTransferCandidates(routeRows, originStops, destinationStops) {
                 alightStopCode: alight.stop.stopCode,
                 rideStops: secondRideStops,
                 routeDistanceKm: Number(secondDistanceKm.toFixed(2)),
+                ...(secondTransfer.operatingWindow ? { operatingWindow: secondTransfer.operatingWindow } : {}),
               },
             ],
           });
@@ -461,6 +466,17 @@ async function attachTransferLiveArrivals(apiKey, candidates, signal) {
   return candidates;
 }
 
+async function attachServiceSchedules(apiKey, candidates) {
+  const schedules = await busServiceSchedule.loadServiceSchedules(apiKey);
+  candidates.forEach((candidate) => {
+    (candidate.legs || []).forEach((leg) => {
+      const schedule = schedules.get(busServiceSchedule.serviceKey(leg.serviceNo, leg.direction));
+      if (schedule) leg.serviceSchedule = schedule;
+    });
+  });
+  return candidates;
+}
+
 function liveCoverageTier(candidate) {
   if (!Number.isFinite(candidate.catchableArrivalMinutes)) return 2;
   if ((Number(candidate.transfers) || 0) === 0) return 0;
@@ -502,6 +518,7 @@ module.exports = async function handler(req, res) {
     const url = new URL(req.url, 'https://dailyloop.local');
     const start = parsePoint(url.searchParams.get('start'));
     const end = parsePoint(url.searchParams.get('end'));
+    const includeSchedule = url.searchParams.get('includeSchedule') === '1';
     if (!start || !end) return res.status(400).json({ error: 'Valid Singapore start and end coordinates are required.' });
 
     const apiKey = process.env.LTA_API_KEY;
@@ -542,7 +559,19 @@ module.exports = async function handler(req, res) {
       liveDeadline.cancel();
     }
 
-    return res.status(200).json({
+    let scheduleStatus = 'not-requested';
+    if (includeSchedule) {
+      try {
+        await attachServiceSchedules(apiKey, candidates);
+        scheduleStatus = 'ready';
+      } catch (error) {
+        busServiceSchedule.reset();
+        scheduleStatus = 'unavailable';
+        safeUpstreamFailure(error);
+      }
+    }
+
+    const response = {
       engine: 'lta-realtime-bus-v2',
       scope: 'bus-up-to-one-transfer',
       candidates: rankCandidates(candidates),
@@ -553,7 +582,9 @@ module.exports = async function handler(req, res) {
         'Live arrivals are checked for both bus services when bounded live data is available, but transfer catchability and in-vehicle travel time are not estimated yet.',
       ],
       updatedAt: new Date().toISOString(),
-    });
+    };
+    if (includeSchedule) response.scheduleStatus = scheduleStatus;
+    return res.status(200).json(response);
   } catch (error) {
     safeUpstreamFailure(error);
     return res.status(502).json({ error: 'LTA realtime routing is temporarily unavailable.' });
@@ -568,6 +599,8 @@ module.exports._test = {
   accessWalkMinutes,
   catchableArrival,
   attachTransferLiveArrivals,
+  attachServiceSchedules,
+  busServiceSchedule,
   liveCoverageTier,
   rankCandidates,
   resetRouteCache() {

@@ -4,7 +4,7 @@ const router = require('./realtime-route');
 
 test('finds a direct service only when boarding precedes alighting', () => {
   const routes = [
-    { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 4, BusStopCode: '65029', Distance: 1.2 },
+    { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 4, BusStopCode: '65029', Distance: 1.2, WD_FirstBus: '0530', WD_LastBus: '2330' },
     { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 25, BusStopCode: '70289', Distance: 9.5 },
     { ServiceNo: '80', Operator: 'SBST', Direction: 2, StopSequence: 4, BusStopCode: '70289', Distance: 1.2 },
     { ServiceNo: '80', Operator: 'SBST', Direction: 2, StopSequence: 25, BusStopCode: '65029', Distance: 9.5 },
@@ -18,6 +18,7 @@ test('finds a direct service only when boarding precedes alighting', () => {
   assert.equal(candidates[0].direction, 1);
   assert.equal(candidates[0].rideStops, 21);
   assert.equal(candidates[0].routeDistanceKm, 8.3);
+  assert.deepEqual(candidates[0].legs[0].operatingWindow.weekday, { firstMinutes: 330, lastMinutes: 1410 });
 });
 
 test('finds a one-transfer journey only when both bus legs move forward through the shared stop', () => {

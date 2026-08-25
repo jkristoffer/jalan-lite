@@ -16,6 +16,15 @@ test('keeps transfer bus connectors out of the timed direct-bus pool',()=>{
   assert.equal(candidates[0].kind,'direct');
 });
 
+test('keeps static direct buses available for scheduled rail-to-bus estimates',()=>{
+  const candidates=tools.directBusCandidates({candidates:[
+    {kind:'transfer',transfers:1,legs:[{},{}]},
+    {kind:'direct',transfers:0,legs:[{}]},
+  ]});
+  assert.equal(candidates.length,1);
+  assert.equal(candidates[0].kind,'direct');
+});
+
 test('accepts a short direct bus timing estimate but rejects a long uncertain one',()=>{
   const short=tools.estimateDirectBusTiming({transfers:0,catchableArrivalMinutes:4,alight:{distanceMetres:46},legs:[{routeDistanceKm:1.5,rideStops:4}]});
   assert.equal(short.reliable,true);
@@ -94,6 +103,28 @@ test('makes a bounded rail to direct bus transfer rankable when a monitored futu
   assert.equal(result.busTiming.boardingInMinutes,25);
   assert.ok(result.busTiming.transferMarginMinutes>=4);
   assert.equal(result.legs[1].selectedBoardingInMinutes,25);
+  assert.equal(result.timingSource,'live');
+});
+
+test('falls back to a bounded scheduled-frequency estimate when no future monitored bus is visible',()=>{
+  const rail={transfers:0,totalWalkMetres:120,estimatedTotalMinutes:18,legs:[{mode:'MRT',routeId:'DTL'}]};
+  const bus={
+    kind:'direct',transfers:0,totalWalkMetres:180,operator:'SBST',
+    board:{distanceMetres:75},alight:{distanceMetres:105},
+    arrivals:[5,25,39],monitored:[false,false,false],
+    legs:[{
+      serviceNo:'20',direction:1,boardStopCode:'A',alightStopCode:'B',rideStops:5,routeDistanceKm:2,
+      liveStatus:'ready',arrivals:[5,25,39],monitored:[false,false,false],
+      operatingWindow:{weekday:{firstMinutes:300,lastMinutes:1440}},
+      serviceSchedule:{frequencies:{amPeak:null,amOffpeak:{minMinutes:8,maxMinutes:10},pmPeak:{minMinutes:8,maxMinutes:10},pmOffpeak:{minMinutes:8,maxMinutes:10}}},
+    }],
+  };
+  const result=tools.timedRailBusCandidate(rail,bus,{id:'DT20',name:'Fort Canning',lat:1.29,lng:103.84},{dateKey:'20260825',seconds:15*3600});
+  assert.equal(result.timingSource,'scheduled-estimate');
+  assert.equal(result.busTiming.timingSource,'scheduled-estimate');
+  assert.deepEqual(result.busTiming.waitRangeMinutes,[0,10]);
+  assert.equal(result.rankable,true);
+  assert.equal(result.timingConfidence,'low');
 });
 
 test('keeps rail to bus unranked when the future bus is unmonitored or too early',()=>{
