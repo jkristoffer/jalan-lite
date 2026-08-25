@@ -65,6 +65,9 @@ test('accepts a valid LTA bus arrival payload and rejects malformed Services', (
   assert.equal(bus._test.isBusArrivalPayload({
     Services: [{ ServiceNo: '166', NextBus: busObject, NextBus2: null, NextBus3: null }],
   }), true);
+  assert.equal(bus._test.isBusArrivalPayload({
+    Services: [{ ServiceNo: '166', NextBus: { EstimatedArrival: null, Monitored: null } }],
+  }), true);
   assert.equal(bus._test.isBusArrivalPayload({ Services: {} }), false);
   assert.equal(bus._test.isBusArrivalPayload({ Services: [{ ServiceNo: '166', NextBus: { EstimatedArrival: 3 } }] }), false);
 });
