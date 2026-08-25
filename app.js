@@ -2,6 +2,7 @@
 const STORAGE_KEY='jalan-lite-presets-v1';
 const urgent='#A33A24';
 const runtime=window.JalanRuntime;
+const routineStorage=window.JalanRoutines;
 const busRequests=runtime.createRequestCoordinator();
 const starter={id:'morning-commute',name:'Morning Commute',stopCode:'54009',stopName:'Blk 210 Ang Mo Kio Ave 3',services:['166','76','265'],days:[1,2,3,4,5],startTime:'07:15',endTime:'09:00'};
 const state={presets:loadPresets(),selectedId:null,view:'list',focusService:'',arrivals:[],updatedAt:null,loading:false,error:'',draft:null,draftService:'',location:null,nearby:[],selectedStop:null,discoverLoading:false,discoverError:'',mapLoading:false,mapController:null,confirm:null,stopAbort:null};
@@ -10,8 +11,19 @@ let mapGeneration=0;
 state.selectedId=(state.presets.find(isActive)||state.presets[0]||{}).id||null;
 state.view=state.presets.find(isActive)?'main':'list';
 
-function loadPresets(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY))||[starter]}catch{return[starter]}}
-function savePresets(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state.presets))}
+function legacyLoadPresets(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY))||[starter]}catch{return[starter]}}
+function loadPresets(){
+  if(!routineStorage)return legacyLoadPresets();
+  const loaded=routineStorage.load();
+  return loaded.routines.filter(routine=>routine.type==='bus').map(routineStorage.busPresetFromRoutine).filter(Boolean);
+}
+function savePresets(){
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(state.presets));
+  if(!routineStorage)return;
+  const loaded=routineStorage.load();
+  const busRoutines=state.presets.map(routineStorage.routineFromBusPreset).filter(Boolean);
+  routineStorage.save([...loaded.routines.filter(routine=>routine.type!=='bus'),...busRoutines]);
+}
 function selected(){return state.presets.find(p=>p.id===state.selectedId)||state.presets[0]}
 function mins(t){const[h,m]=t.split(':').map(Number);return h*60+m}
 function isActive(p){const n=new Date(),d=n.getDay(),m=n.getHours()*60+n.getMinutes();return p.days.includes(d)&&m>=mins(p.startTime)&&m<=mins(p.endTime)}

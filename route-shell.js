@@ -1,5 +1,6 @@
 (() => {
   const STORAGE_KEY = 'jalan-lite-routes-v1';
+  const routineStorage = window.JalanRoutines;
   const DEFAULT_CENTER = { lat: 1.3521, lng: 103.8198 };
   const LIVE_REFRESH_INTERVAL = 45000;
   const PLANNING_WINDOW_MS = 90 * 60 * 1000;
@@ -93,7 +94,7 @@
     };
   }
 
-  function load() {
+  function legacyLoad() {
     try {
       const value = JSON.parse(localStorage.getItem(STORAGE_KEY));
       return value && typeof value.origin === 'string' ? value : null;
@@ -102,10 +103,28 @@
     }
   }
 
+  function load() {
+    if (!routineStorage) return legacyLoad();
+    const loaded = routineStorage.load();
+    const routine = loaded.routines.find((value) => value.type === 'route');
+    return routine ? routineStorage.routeFromRoutine(routine) : null;
+  }
+
   function save(value) {
     saved = value;
     draftState = draft(value);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    if (!routineStorage) return;
+    const loaded = routineStorage.load();
+    const routeRoutine = routineStorage.routineFromRoute(value);
+    if (routeRoutine) routineStorage.save([...loaded.routines.filter((routine) => routine.type !== 'route'), routeRoutine]);
+  }
+
+  function clearSavedRoute() {
+    localStorage.removeItem(STORAGE_KEY);
+    if (!routineStorage) return;
+    const loaded = routineStorage.load();
+    routineStorage.save(loaded.routines.filter((routine) => routine.type !== 'route'));
   }
 
   function brand() {
@@ -1484,7 +1503,7 @@
         else if (action === 'bus') { cancelAsyncWork(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
         else if (action === 'edit') { cancelAsyncWork(); dashboardPane = 'now'; draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); dashboardPane = 'now'; routeState = { status: 'idle', data: null, error: '' }; render(); } }
-        else if (action === 'clear') { cancelAsyncWork(); dashboardPane = 'now'; localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
+        else if (action === 'clear') { cancelAsyncWork(); dashboardPane = 'now'; clearSavedRoute(); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
         else if (action === 'cancel') closePicker();
         else if (action === 'confirm') { draftState[pickerField] = mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label; draftState[`${pickerField}Point`] = { ...mapPosition.center }; closePicker(); }
         else if (action === 'manual') manualLocation();

@@ -152,6 +152,23 @@ test('normalizes and round-trips new routines without touching legacy keys', () 
   assert.deepEqual(JSON.parse(storage.raw(routines.STORAGE_KEYS.presets)), [busPreset]);
 });
 
+test('converts unified routines back to the existing bus and route record shapes', () => {
+  const busRoutine = routines.routineFromBusPreset(busPreset);
+  assert.deepEqual(routines.busPresetFromRoutine(busRoutine), busPreset);
+
+  const routeRoutine = routines.routineFromRoute(savedRoute);
+  assert.deepEqual(routines.routeFromRoutine(routeRoutine), {
+    id: 'route-1',
+    name: 'Saved commute',
+    origin: 'Home',
+    destination: 'Work',
+    originPoint: savedRoute.originPoint,
+    destinationPoint: savedRoute.destinationPoint,
+    departureTime: '08:30',
+    timeMode: 'depart',
+  });
+});
+
 test('returns a safe empty envelope when storage is unavailable', () => {
   const result = routines.load(null);
   const saved = routines.save([], null);

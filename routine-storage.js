@@ -120,6 +120,79 @@
     };
   }
 
+  function routineFromBusPreset(value) {
+    const source = isObject(value) ? value : {};
+    const id = asText(source.id);
+    const bus = normalizeBus(source);
+    if (!id || !bus) return null;
+    return normalizeRoutine({
+      id: `bus:${id}`,
+      type: 'bus',
+      name: asText(source.name) || 'Bus commute',
+      schedule: {
+        days: normalizeDays(source.days),
+        startTime: source.startTime,
+        endTime: source.endTime,
+        timeMode: 'depart',
+      },
+      bus,
+      notifications: source.notifications,
+      legacy: { key: STORAGE_KEYS.presets, id },
+    });
+  }
+
+  function busPresetFromRoutine(value) {
+    const routine = normalizeRoutine(value);
+    if (!routine || routine.type !== 'bus') return null;
+    const id = routine.legacy?.key === STORAGE_KEYS.presets && routine.legacy.id
+      ? routine.legacy.id
+      : routine.id.replace(/^bus:/, '') || routine.id;
+    return {
+      id,
+      name: routine.name,
+      stopCode: routine.bus.stopCode,
+      stopName: routine.bus.stopName,
+      services: [...routine.bus.services],
+      days: Array.isArray(routine.schedule.days) ? [...routine.schedule.days] : [1, 2, 3, 4, 5],
+      startTime: routine.schedule.startTime || '07:30',
+      endTime: routine.schedule.endTime || '09:00',
+    };
+  }
+
+  function routineFromRoute(value) {
+    const source = isObject(value) ? value : {};
+    const id = asText(source.id) || 'route-1';
+    const route = normalizeRoute(source);
+    if (!route) return null;
+    return normalizeRoutine({
+      id: `route:${id}`,
+      type: 'route',
+      name: asText(source.name) || 'Saved commute',
+      schedule: {
+        departureTime: source.departureTime,
+        timeMode: source.timeMode,
+      },
+      route,
+      notifications: source.notifications,
+      legacy: { key: STORAGE_KEYS.routes, id },
+    });
+  }
+
+  function routeFromRoutine(value) {
+    const routine = normalizeRoutine(value);
+    if (!routine || routine.type !== 'route') return null;
+    const id = routine.legacy?.key === STORAGE_KEYS.routes && routine.legacy.id
+      ? routine.legacy.id
+      : routine.id.replace(/^route:/, '') || routine.id;
+    return {
+      id,
+      name: routine.name,
+      ...routine.route,
+      departureTime: routine.schedule.departureTime || '08:30',
+      timeMode: routine.schedule.timeMode,
+    };
+  }
+
   function createEnvelope(routines = []) {
     const normalized = Array.isArray(routines)
       ? routines.map(normalizeRoutine).filter(Boolean)
@@ -158,46 +231,13 @@
   function legacyBusRoutines(storage) {
     const stored = readJson(storage, STORAGE_KEYS.presets);
     if (!stored.valid || !Array.isArray(stored.value)) return [];
-    return stored.value.map((preset) => {
-      const bus = normalizeBus(preset);
-      if (!bus) return null;
-      const id = asText(preset.id);
-      if (!id) return null;
-      return normalizeRoutine({
-        id: `bus:${id}`,
-        type: 'bus',
-        name: asText(preset.name) || 'Bus commute',
-        schedule: {
-          days: normalizeDays(preset.days),
-          startTime: preset.startTime,
-          endTime: preset.endTime,
-          timeMode: 'depart',
-        },
-        bus,
-        notifications: {},
-        legacy: { key: STORAGE_KEYS.presets, id },
-      });
-    }).filter(Boolean);
+    return stored.value.map(routineFromBusPreset).filter(Boolean);
   }
 
   function legacyRouteRoutines(storage) {
     const stored = readJson(storage, STORAGE_KEYS.routes);
     if (!stored.valid) return [];
-    const route = normalizeRoute(stored.value);
-    if (!route) return [];
-    const id = asText(stored.value.id) || 'route-1';
-    return [normalizeRoutine({
-      id: `route:${id}`,
-      type: 'route',
-      name: asText(stored.value.name) || 'Saved commute',
-      schedule: {
-        departureTime: stored.value.departureTime,
-        timeMode: stored.value.timeMode,
-      },
-      route,
-      notifications: {},
-      legacy: { key: STORAGE_KEYS.routes, id },
-    })].filter(Boolean);
+    return [routineFromRoute(stored.value)].filter(Boolean);
   }
 
   function readLegacy(storage) {
@@ -236,6 +276,10 @@
     createEnvelope,
     normalizeEnvelope,
     normalizeRoutine,
+    routineFromBusPreset,
+    busPresetFromRoutine,
+    routineFromRoute,
+    routeFromRoutine,
     readLegacy,
     load,
     save,
