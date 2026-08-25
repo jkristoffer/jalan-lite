@@ -299,6 +299,7 @@
     if (now < arrival) {
       const active = legs.find((entry) => now >= entry.start && now < entry.end);
       const upcoming = legs.find((entry) => entry.start > now);
+      const next = active ? legs.slice(active.index + 1).find((entry) => entry.leg.mode !== 'WALK') : null;
       const current = active || upcoming;
       return {
         phase: active ? 'in_progress' : 'between_legs',
@@ -306,7 +307,7 @@
         countdownMs: active ? arrival - now : Math.max(0, (upcoming?.start || arrival) - now),
         currentAction: actionLabel(current?.leg, Boolean(active)),
         detail: actionDetail(current?.leg, now),
-        nextAction: active ? (legs.slice(active.index + 1).find((entry) => entry.leg.mode !== 'WALK')?.leg ? actionLabel(legs.slice(active.index + 1).find((entry) => entry.leg.mode !== 'WALK').leg) : '') : '',
+        nextAction: active ? (next ? actionLabel(next.leg) : '') : '',
         confidenceLeg: current?.leg || null,
         isStale: false,
       };
