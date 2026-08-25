@@ -51,18 +51,53 @@ test('skips arrivals that leave before the user can walk to the stop', () => {
 
 test('ranks catchable live buses ahead of routes with no usable live arrival', () => {
   const ranked = router._test.rankCandidates([
-    { serviceNo: 'A', transfers: 0, catchableArrivalMinutes: null, totalWalkMetres: 50, routeDistanceKm: 2, rideStops: 2 },
-    { serviceNo: 'B', transfers: 1, catchableArrivalMinutes: 4, totalWalkMetres: 200, routeDistanceKm: 8, rideStops: 10 },
+    { kind: 'direct', serviceNo: 'A', transfers: 0, catchableArrivalMinutes: null, totalWalkMetres: 50, routeDistanceKm: 2, rideStops: 2, board: { stopCode: '1' }, alight: { stopCode: '2' }, legs: [{ serviceNo: 'A', direction: 1 }] },
+    { kind: 'transfer', serviceNo: 'B', secondServiceNo: 'C', transfers: 1, catchableArrivalMinutes: 4, secondLiveStatus: 'unchecked', secondArrivals: [null, null, null], totalWalkMetres: 200, routeDistanceKm: 8, rideStops: 10, board: { stopCode: '1' }, alight: { stopCode: '2' }, legs: [{ serviceNo: 'B', direction: 1 }, { serviceNo: 'C', direction: 1 }] },
   ]);
   assert.equal(ranked[0].serviceNo, 'B');
 });
 
-test('prefers a direct bus over a transfer when first-bus catchability is otherwise equal', () => {
+test('prefers a direct live bus over a transfer until transfer timing can be proven end to end', () => {
   const ranked = router._test.rankCandidates([
-    { serviceNo: 'A', transfers: 1, catchableArrivalMinutes: 4, totalWalkMetres: 50, routeDistanceKm: 2, rideStops: 2 },
-    { serviceNo: 'B', transfers: 0, catchableArrivalMinutes: 4, totalWalkMetres: 200, routeDistanceKm: 8, rideStops: 10 },
+    { kind: 'transfer', serviceNo: '82', secondServiceNo: '80', transfers: 1, catchableArrivalMinutes: 4, secondLiveStatus: 'ready', secondArrivals: [8, 18, 28], totalWalkMetres: 151, routeDistanceKm: 7.6, rideStops: 20, board: { stopCode: '65029' }, alight: { stopCode: '70289' }, transfer: { stopCode: '63059' }, legs: [{ serviceNo: '82', direction: 1 }, { serviceNo: '80', direction: 1 }] },
+    { kind: 'direct', serviceNo: '80', transfers: 0, catchableArrivalMinutes: 7, totalWalkMetres: 151, routeDistanceKm: 7.8, rideStops: 21, board: { stopCode: '65029' }, alight: { stopCode: '70289' }, legs: [{ serviceNo: '80', direction: 1 }] },
   ]);
-  assert.equal(ranked[0].serviceNo, 'B');
+  assert.equal(ranked[0].serviceNo, '80');
+});
+
+test('prefers a transfer with live data for both services over a partial-live transfer', () => {
+  const ranked = router._test.rankCandidates([
+    { kind: 'transfer', serviceNo: '10', secondServiceNo: '20', transfers: 1, catchableArrivalMinutes: 3, secondLiveStatus: 'unavailable', secondArrivals: [null, null, null], totalWalkMetres: 50, routeDistanceKm: 4, rideStops: 6, board: { stopCode: '10001' }, alight: { stopCode: '40001' }, transfer: { stopCode: '20001' }, legs: [{ serviceNo: '10', direction: 1 }, { serviceNo: '20', direction: 1 }] },
+    { kind: 'transfer', serviceNo: '11', secondServiceNo: '21', transfers: 1, catchableArrivalMinutes: 5, secondLiveStatus: 'ready', secondArrivals: [8, 18, null], totalWalkMetres: 100, routeDistanceKm: 7, rideStops: 10, board: { stopCode: '10001' }, alight: { stopCode: '40001' }, transfer: { stopCode: '20002' }, legs: [{ serviceNo: '11', direction: 1 }, { serviceNo: '21', direction: 1 }] },
+  ]);
+  assert.equal(ranked[0].serviceNo, '11');
+});
+
+test('deduplicates equivalent transfer service pairs with different transfer stops', () => {
+  const ranked = router._test.rankCandidates([
+    { kind: 'transfer', serviceNo: '82', secondServiceNo: '80', transfers: 1, catchableArrivalMinutes: 4, secondLiveStatus: 'ready', secondArrivals: [8], totalWalkMetres: 151, routeDistanceKm: 7.6, rideStops: 20, board: { stopCode: '65029' }, alight: { stopCode: '70289' }, transfer: { stopCode: '63059' }, legs: [{ serviceNo: '82', direction: 1 }, { serviceNo: '80', direction: 1 }] },
+    { kind: 'transfer', serviceNo: '82', secondServiceNo: '80', transfers: 1, catchableArrivalMinutes: 4, secondLiveStatus: 'ready', secondArrivals: [9], totalWalkMetres: 151, routeDistanceKm: 7.6, rideStops: 20, board: { stopCode: '65029' }, alight: { stopCode: '70289' }, transfer: { stopCode: '63049' }, legs: [{ serviceNo: '82', direction: 1 }, { serviceNo: '80', direction: 1 }] },
+  ]);
+  assert.equal(ranked.length, 1);
+});
+
+test('attaches live arrival state for the second bus at the transfer stop', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ Services: [{ ServiceNo: '20', NextBus: { EstimatedArrival: new Date(Date.now() + 10 * 60000).toISOString(), Monitored: '1' }, NextBus2: null, NextBus3: null }] }),
+  });
+  const candidate = { kind: 'transfer', serviceNo: '10', secondServiceNo: '20', transfers: 1, catchableArrivalMinutes: 4, transfer: { stopCode: '20001' }, legs: [{ serviceNo: '10', direction: 1 }, { serviceNo: '20', direction: 1 }] };
+  try {
+    await router._test.attachTransferLiveArrivals('test-key', [candidate]);
+    assert.equal(candidate.secondLiveStatus, 'ready');
+    assert.equal(candidate.secondArrivals[0], 10);
+    assert.equal(candidate.legs[1].liveStatus, 'ready');
+    assert.equal(candidate.legs[1].monitored[0], true);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('validates LTA BusRoutes pages and Singapore coordinate inputs', () => {
