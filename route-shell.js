@@ -642,7 +642,7 @@
     if (!pager) return;
     clearDashboardScrollUnlock();
     const panes = ['now', 'route', 'live'];
-    pager.scrollLeft = pager.clientWidth * dashboardPaneIndex(dashboardPane);
+    pager.scrollTo({ left: pager.clientWidth * dashboardPaneIndex(dashboardPane), top: 0, behavior: 'auto' });
     updateDashboardNavDom();
     let scrollTimer = null;
     const syncFromScroll = () => {
@@ -969,7 +969,7 @@
     const container = document.getElementById('route-map');
     const fallback = document.getElementById('map-fallback');
     if (!container || !pickerField) return;
-    if (!window.mapboxgl) { fallback.hidden = false; return; }
+    if (!window.mapboxgl) { showFallback(); return; }
     try {
       mapboxgl.accessToken = await mapToken();
       if (generation !== mapGeneration || !pickerField || !document.getElementById('route-map')) return;
@@ -980,8 +980,8 @@
       nextMap.on('load', () => { if (generation === mapGeneration && pickerField && map === nextMap) reverseLabel(generation); });
       nextMap.on('move', () => { if (generation !== mapGeneration || map !== nextMap) return; const center = nextMap.getCenter(); mapPosition.center = { lat: center.lat, lng: center.lng }; mapPosition.zoom = nextMap.getZoom(); mapPosition.label = 'Pinned location'; updatePickerDom(); });
       nextMap.on('moveend', () => { if (generation === mapGeneration && pickerField && map === nextMap) reverseLabel(generation); });
-      nextMap.on('error', () => { if (generation === mapGeneration && fallback) fallback.hidden = false; });
-    } catch { if (generation === mapGeneration && fallback) fallback.hidden = false; }
+      nextMap.on('error', () => { if (generation === mapGeneration) showFallback(); });
+    } catch { if (generation === mapGeneration) showFallback(); }
   }
 
   function decodePolyline(value, precision = 5) {
@@ -1004,6 +1004,14 @@
     const fallback = document.getElementById(fallbackId);
     const itinerary = routeState.data;
     const active = () => viewerMode ? viewing : Boolean(saved && routeState.data && !pickerField && !focusMode && !disruptionDemoOpen);
+    const showFallback = () => {
+      if (!fallback) return;
+      fallback.hidden = false;
+      const title = fallback.querySelector('strong');
+      const detail = fallback.querySelector('span');
+      if (title) title.textContent = 'Map unavailable';
+      if (detail) detail.textContent = 'The journey timeline is still available below.';
+    };
     if (!container || !itinerary || !saved?.originPoint) return;
     if (!window.mapboxgl) { fallback.hidden = false; return; }
     try {
