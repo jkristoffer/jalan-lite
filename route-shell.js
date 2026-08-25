@@ -998,7 +998,8 @@
       refresh.disabled = routeState.status === 'rerouting';
       refresh.textContent = routeState.status === 'rerouting' ? 'Updating route…' : 'Recalculate from now';
     }
-    if (focus) focus.hidden = state.isStale || !routeState.data || routeState.status === 'rerouting';
+    if (focus) focus.hidden = state.isStale || state.phase === 'planning' || !routeState.data || routeState.status === 'rerouting';
+    syncLiveRefresh();
   }
 
   function syncTemporalClock() {
@@ -1355,6 +1356,7 @@
     const current = routeState.data;
     const choice = alternativeOptions(current).find((option) => option.key === key);
     if (!choice || itinerarySignature(choice.itinerary) === itinerarySignature(current)) return;
+    liveRequests.abort();
     const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
     const liveOpen = liveWindowOpen(selected);
     const request = liveOpen ? liveRequests.start() : null;
