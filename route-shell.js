@@ -34,6 +34,7 @@
   let temporalTimer = null;
   let dashboardPane = 'now';
   let dashboardScrollUnlockTimer = null;
+  let dashboardScrollAnimationFrame = null;
   let dismissedNotice = '';
 
   shell.className = 'route-shell';
@@ -634,7 +635,9 @@
 
   function clearDashboardScrollUnlock() {
     if (dashboardScrollUnlockTimer) window.clearTimeout(dashboardScrollUnlockTimer);
+    if (dashboardScrollAnimationFrame) window.cancelAnimationFrame(dashboardScrollAnimationFrame);
     dashboardScrollUnlockTimer = null;
+    dashboardScrollAnimationFrame = null;
   }
 
   function syncDashboardPager() {
@@ -679,6 +682,22 @@
     window.requestAnimationFrame(() => renderInlineRouteMap());
   }
 
+  function animateDashboardPane(pager, target) {
+    const start = pager.scrollLeft;
+    const distance = target - start;
+    if (Math.abs(distance) < 1) { pager.scrollLeft = target; return; }
+    const startedAt = performance.now();
+    const duration = 260;
+    const frame = (now) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      pager.scrollLeft = start + (distance * eased);
+      if (progress < 1 && dashboardScrollUnlockTimer) dashboardScrollAnimationFrame = window.requestAnimationFrame(frame);
+      else { pager.scrollLeft = target; dashboardScrollAnimationFrame = null; }
+    };
+    dashboardScrollAnimationFrame = window.requestAnimationFrame(frame);
+  }
+
   function setDashboardPane(pane) {
     dashboardPane = ['now', 'route', 'live'].includes(pane) ? pane : 'now';
     updateDashboardNavDom();
@@ -691,7 +710,7 @@
         if (Math.abs(pager.scrollLeft - target) > 2) pager.scrollLeft = target;
         updateDashboardNavDom();
       }, 500);
-      pager.scrollTo({ left: target, behavior: 'smooth' });
+      animateDashboardPane(pager, target);
     }
     if (dashboardPane === 'route') requestInlineRouteMap();
   }
