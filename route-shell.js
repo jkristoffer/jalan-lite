@@ -2,6 +2,7 @@
   const STORAGE_KEY = 'jalan-lite-routes-v1';
   const DEFAULT_CENTER = { lat: 1.3521, lng: 103.8198 };
   const LIVE_REFRESH_INTERVAL = 45000;
+  const PLANNING_WINDOW_MS = 90 * 60 * 1000;
   const shell = document.createElement('section');
   const launcher = document.createElement('button');
   const disruptionTools = window.JalanDisruptions;
@@ -166,7 +167,7 @@
   function journeyHero() {
     const state = journeyTemporalState();
     const focusButton = routeState.data
-      ? `<button id='journey-hero-focus' class='focus-launch-button journey-hero-focus' data-route-action='focus'${state.isStale || routeState.status === 'rerouting' ? ' hidden' : ''}>Focus mode</button>`
+      ? `<button id='journey-hero-focus' class='focus-launch-button journey-hero-focus' data-route-action='focus'${state.isStale || state.phase === 'planning' || routeState.status === 'rerouting' ? ' hidden' : ''}>Focus mode</button>`
       : '';
     return '<section class="journey-hero">' + temporalCard() + journey() + focusButton + '</section>';
   }
@@ -296,6 +297,7 @@
         phase: 'loading',
         label: 'GETTING READY',
         countdownMs: 0,
+        primaryTime: '',
         currentAction: 'Waiting for your route',
         detail: 'The route timetable is still being prepared.',
         nextAction: '',
@@ -308,10 +310,27 @@
     if (now < departure) {
       const first = legs[0];
       const next = legs.slice(1).find((entry) => entry.leg.mode !== 'WALK') || legs[1];
+      const timeUntilDeparture = departure - now;
+      const planning = timeUntilDeparture > PLANNING_WINDOW_MS;
+      const arriveBy = saved?.timeMode === 'arrive';
+      if (planning) {
+        return {
+          phase: 'planning',
+          label: arriveBy ? 'ARRIVE BY' : 'PLANNED COMMUTE',
+          countdownMs: timeUntilDeparture,
+          primaryTime: timeAt(arriveBy ? arrival : departure),
+          currentAction: arriveBy ? 'Leave around ' + timeAt(departure) : 'Leave at ' + timeAt(departure),
+          detail: 'Live timings refresh closer to departure.',
+          nextAction: '',
+          confidenceLeg: null,
+          isStale: false,
+        };
+      }
       return {
         phase: 'upcoming',
         label: itinerary.service === 'next' ? 'NEXT DEPARTURE' : 'LEAVE IN',
-        countdownMs: departure - now,
+        countdownMs: timeUntilDeparture,
+        primaryTime: '',
         currentAction: actionLabel(first?.leg),
         detail: actionDetail(first?.leg, now),
         nextAction: next ? actionLabel(next.leg) : '',
@@ -329,6 +348,7 @@
         phase: active ? 'in_progress' : 'between_legs',
         label: active ? 'NOW' : 'NEXT',
         countdownMs: active ? arrival - now : Math.max(0, (upcoming?.start || arrival) - now),
+        primaryTime: '',
         currentAction: actionLabel(current?.leg, Boolean(active)),
         detail: actionDetail(current?.leg, now),
         nextAction: active ? (next ? actionLabel(next.leg) : '') : '',
@@ -341,6 +361,7 @@
       phase: 'complete',
       label: 'TRIP TIME PASSED',
       countdownMs: 0,
+      primaryTime: '',
       currentAction: 'Ready for a fresh route',
       detail: 'The planned arrival at ' + (saved?.destination || 'your destination') + ' was ' + timeAt(arrival) + '.',
       nextAction: '',
@@ -352,7 +373,7 @@
   function temporalCountdownLabel(state) {
     if (!state || !state.countdownMs) return '';
     const totalMinutes = Math.max(1, Math.ceil(state.countdownMs / 60000));
-    if (state.phase === 'upcoming') return totalMinutes < 60 ? totalMinutes + ' min' : Math.floor(totalMinutes / 60) + ' hr ' + (totalMinutes % 60 ? (totalMinutes % 60) + ' min' : '');
+    if (state.phase === 'planning' || state.phase === 'upcoming') return totalMinutes < 60 ? totalMinutes + ' min' : Math.floor(totalMinutes / 60) + ' hr ' + (totalMinutes % 60 ? (totalMinutes % 60) + ' min' : '');
     if (state.phase === 'in_progress' || state.phase === 'between_legs') return 'Arrive in ' + (totalMinutes < 60 ? totalMinutes + ' min' : Math.floor(totalMinutes / 60) + ' hr');
     return '';
   }
@@ -360,7 +381,7 @@
   function focusInfo(now = Date.now()) {
     const state = journeyTemporalState(now);
     if (state.phase === 'loading') return { phase: 'loading', label: 'GETTING READY', countdown: '—', context: state.currentAction };
-    const phase = state.phase === 'upcoming' ? 'depart' : state.phase === 'complete' ? 'complete' : 'arrive';
+    const phase = state.phase === 'planning' || state.phase === 'upcoming' ? 'depart' : state.phase === 'complete' ? 'complete' : 'arrive';
     return {
       phase,
       label: state.phase === 'complete' ? 'TRIP TIME PASSED' : state.label,
@@ -494,16 +515,18 @@
 
   function temporalCard() {
     const state = journeyTemporalState();
-    const countdown = temporalCountdownLabel(state) || '—';
+    const planning = state.phase === 'planning';
+    const countdown = planning ? (state.primaryTime || '—') : (temporalCountdownLabel(state) || '—');
     if (state.phase === 'loading') {
       const failure = routeState.status === 'error';
       const detail = failure ? routeState.error : 'Checking Singapore public transport.';
       return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-loading" role="status"><div class="now-state-top"><div><div class="route-card-label">' + (failure ? 'ROUTE UNAVAILABLE' : 'PLANNING') + '</div><strong id="journey-temporal-countdown" class="now-countdown">—</strong></div><span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span></div><h2 id="journey-temporal-action">' + (failure ? 'Route unavailable' : 'Finding your route…') + '</h2><p id="journey-temporal-detail">' + escapeHtml(detail) + '</p></div>';
     }
-    const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
-    const confidenceText = confidence ? confidence.label + ' · ' + confidence.source : '';
+    const confidence = planning ? null : (state.confidenceLeg ? legConfidence(state.confidenceLeg) : null);
+    const confidenceText = planning ? 'Scheduled · refreshes later' : (confidence ? confidence.label + ' · ' + confidence.source : '');
+    const relativeMarkup = '<span id="journey-temporal-relative" class="now-planning-relative"' + (planning ? '' : ' hidden') + '>' + (planning ? 'In ' + escapeHtml(temporalCountdownLabel(state)) : '') + '</span>';
     const actionButton = '<button class="route-primary journey-hero-refresh" data-route-action="refresh-now"' + (state.isStale ? '' : ' hidden') + '>Recalculate from now</button>';
-    return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-' + state.phase + '" aria-live="polite"><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown" class="now-countdown">' + escapeHtml(countdown) + '</strong></div>' + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>') + '</div><h2 id="journey-temporal-action">' + escapeHtml(state.currentAction) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p><div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>' + actionButton + '</div>';
+    return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-' + state.phase + '" aria-live="polite"><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown" class="now-countdown">' + escapeHtml(countdown) + '</strong>' + relativeMarkup + '</div>' + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>') + '</div><h2 id="journey-temporal-action">' + escapeHtml(state.currentAction) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p><div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>' + actionButton + '</div>';
   }
 
   function modeStatusLabel(status) {
@@ -620,13 +643,24 @@
     const itinerary = routeState.data;
     const hasBus = itinerary?.legs.some((leg) => leg.mode === 'BUS');
     const hasMrt = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY');
+    const liveOpen = liveWindowOpen(itinerary);
     const summary = itinerary ? liveTools.summary(itinerary) : { tone: 'neutral', label: 'Checking route', detail: '' };
     const busStatus = hasBus ? liveTools.modeStatus(itinerary, 'BUS') : null;
     const mrtStatus = hasMrt ? liveTools.modeStatus(itinerary, 'SUBWAY') : null;
-    const sourceCopy = `${hasBus ? (busStatus === 'live' ? 'Bus legs use LTA real-time arrivals.' : 'Bus legs use LTA arrivals when available, with OneMap timings as fallback.') : ''}${hasMrt ? (mrtStatus === 'live' ? ' MRT legs use LTA GTFS-Realtime trip updates.' : ' MRT legs use OneMap schedule timings when live train data is unavailable.') : ''}${hasBus || hasMrt ? ' Live feeds refresh every 45 seconds while this screen is open.' : ' This route only needs OneMap route data.'}`;
+    const sourceCopy = hasBus || hasMrt
+      ? (hasBus ? (busStatus === 'live' ? 'Bus legs use LTA real-time arrivals.' : 'Bus legs use LTA arrivals when available, with OneMap timings as fallback.') : '') +
+        (hasMrt ? (mrtStatus === 'live' ? ' MRT legs use LTA GTFS-Realtime trip updates.' : ' MRT legs use OneMap schedule timings when live train data is unavailable.') : '') +
+        (liveOpen ? ' Live feeds refresh every 45 seconds while this screen is open.' : ' Live feeds become available within 90 minutes of departure.')
+      : ' This route only needs OneMap route data.';
     const sourceHeading = `Bus ${hasBus ? modeStatusLabel(busStatus) : '—'} · MRT ${hasMrt ? modeStatusLabel(mrtStatus) : '—'}`;
-    const refreshDisabled = liveRefreshInFlight || liveRefreshStatus === 'loading' || !hasLiveTiming(itinerary);
-    const refreshLabel = liveRefreshInFlight || liveRefreshStatus === 'loading' ? 'Updating…' : 'Refresh live data';
+    const refreshDisabled = liveRefreshInFlight || liveRefreshStatus === 'loading' || !hasLiveTiming(itinerary) || !liveOpen;
+    const refreshLabel = liveRefreshInFlight || liveRefreshStatus === 'loading'
+      ? 'Updating…'
+      : !liveOpen
+        ? 'Available closer to departure'
+        : !hasLiveTiming(itinerary)
+          ? 'No live feed'
+          : 'Refresh live data';
     return `<section class='timing-card'><div class='timing-heading'><div><div class='route-card-label'>Timing confidence</div><h2>${sourceHeading}</h2></div><div class='timing-status'><span class='live-state live-state-${escapeHtml(summary.tone)}'>${escapeHtml(summary.label)}</span><span id='live-freshness' class='live-freshness'>${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class='timing-controls'><span class='timing-control-note'>${escapeHtml(liveFreshness())}</span><button type='button' class='timing-refresh' data-route-action='refresh-live' ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class='route-link demo-disruption-link' data-route-action='demo-disruption'>Preview disruption flow</button></section>`;
   }
 
@@ -823,9 +857,27 @@
     if (note) note.textContent = liveFreshness();
     const button = document.querySelector('[data-route-action="refresh-live"]');
     if (button) {
-      button.disabled = liveRefreshInFlight || liveRefreshStatus === 'loading';
-      button.textContent = liveRefreshInFlight || liveRefreshStatus === 'loading' ? 'Updating…' : 'Refresh live data';
+      const liveOpen = liveWindowOpen(routeState.data);
+      const liveAvailable = hasLiveTiming(routeState.data);
+      const busy = liveRefreshInFlight || liveRefreshStatus === 'loading';
+      button.disabled = busy || !liveOpen || !liveAvailable;
+      button.textContent = busy
+        ? 'Updating…'
+        : !liveOpen
+          ? 'Available closer to departure'
+          : !liveAvailable
+            ? 'No live feed'
+            : 'Refresh live data';
     }
+  }
+
+  function liveWindowOpen(itinerary = routeState.data, now = Date.now()) {
+    const departure = toTimestamp(itinerary?.startTime) || todayAt(saved?.departureTime);
+    return !departure || departure - now <= PLANNING_WINDOW_MS;
+  }
+
+  function canRefreshLive() {
+    return Boolean(saved && routeState.status === 'ready' && routeState.data && hasLiveTiming(routeState.data) && liveWindowOpen() && !pickerField && !viewing && !disruptionDemoOpen && !document.hidden && !shell.hidden);
   }
 
   function canRefreshLive() {
@@ -1303,14 +1355,16 @@
     const current = routeState.data;
     const choice = alternativeOptions(current).find((option) => option.key === key);
     if (!choice || itinerarySignature(choice.itinerary) === itinerarySignature(current)) return;
-    const request = liveRequests.start();
+    const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
+    const liveOpen = liveWindowOpen(selected);
+    const request = liveOpen ? liveRequests.start() : null;
     selectedLegIndex = null;
     liveUpdatedAt = 0;
-    liveRefreshInFlight = true;
-    liveRefreshStatus = 'loading';
-    const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
+    liveRefreshInFlight = liveOpen;
+    liveRefreshStatus = liveOpen ? 'loading' : 'idle';
     routeState = { status: 'ready', data: selected, error: '' };
     render();
+    if (!liveOpen) return;
     try {
       await Promise.all([liveBus(selected, request.controller.signal), liveTrain(selected, request.controller.signal)]);
       if (liveRequests.isCurrent(request) && routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded && hasLiveTiming(selected)) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(selected) ? 'ready' : 'idle'); render(); }
@@ -1360,6 +1414,12 @@
         notice = `Rerouted via ${disruptionTools.serviceLabel(itinerary)} to avoid the affected service.`;
       }
       routeState = { status: 'ready', data: itinerary, error: '', notice };
+      if (!liveWindowOpen(itinerary)) {
+        liveRefreshInFlight = false;
+        liveRefreshStatus = 'idle';
+        render();
+        return;
+      }
       liveRequest = liveRequests.start();
       liveRefreshInFlight = true;
       render();
