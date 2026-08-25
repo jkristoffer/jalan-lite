@@ -18,6 +18,14 @@ node benchmarks/routing-benchmark.js \
   --json
 ```
 
-The OneMap request receives each requested departure time. LTA-native results still use live `BusArrival` data at the moment of observation, because the current API does not replay historical bus arrivals. Each sample records `ltaObservationTime`; timing deltas should therefore be used for coverage and confidence regression, not treated as historical ETA accuracy.
+Each sample sends the same `requestedClock` timestamp to both endpoints. OneMap and scheduled LTA rail use that requested Singapore clock. Production LTA bus arrivals remain live-at-observation-time, so the report records `ltaObservationTime`; timing deltas from the live matrix are still coverage and confidence evidence, not historical ETA accuracy.
+
+For deterministic timing-layer checks, run the normalized BusArrival replay:
+
+```sh
+node benchmarks/replay-benchmark.js
+```
+
+The replay verifies both a monitored future bus and a frequency-based estimate at a fixed clock without network access. It intentionally does not replace the full network route benchmark: bus-stop and route discovery still require a separate live or recorded network fixture.
 
 The report marks a provisional promotion gate as `eligible` only when there are at least eight samples, both APIs are complete, at least 90% of samples have a ranked LTA path, low-confidence paths are at most 25%, and the median LTA-vs-OneMap delta is at most five minutes. This is an advisory gate; it does not switch the user-facing router.

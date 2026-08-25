@@ -17,12 +17,15 @@ test('keeps the benchmark scenario set fixed and validates departure times', () 
 
 test('builds separate OneMap and LTA-native benchmark URLs', () => {
   const scenario = scenarios.SCENARIOS[0];
-  const oneMapUrl = scenarios.endpointUrl('https://example.test/', scenario, 'onemap', '18:00');
-  const ltaUrl = scenarios.endpointUrl('https://example.test/', scenario, 'lta', '18:00');
+  const requestedAt = scenarios.benchmarkAt('2026-08-25', '18:00');
+  const oneMapUrl = scenarios.endpointUrl('https://example.test/', scenario, 'onemap', '18:00', requestedAt);
+  const ltaUrl = scenarios.endpointUrl('https://example.test/', scenario, 'lta', '18:00', requestedAt);
   assert.equal(new URL(oneMapUrl).pathname, '/api/route');
   assert.equal(new URL(oneMapUrl).searchParams.get('time'), '18:00');
+  assert.equal(new URL(oneMapUrl).searchParams.get('requestedClock'), requestedAt);
   assert.equal(new URL(ltaUrl).pathname, '/api/multimodal-route');
   assert.equal(new URL(ltaUrl).searchParams.get('time'), null);
+  assert.equal(new URL(ltaUrl).searchParams.get('requestedClock'), requestedAt);
 });
 
 test('summarizes scheduled rail-to-bus estimates with source and confidence', () => {
@@ -93,7 +96,12 @@ test('runs a deterministic fixture benchmark without network access', async () =
     },
   });
   assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((url) => new URL(url).searchParams.get('requestedClock')), [
+    '2026-08-25T08:00:00+08:00',
+    '2026-08-25T08:00:00+08:00',
+  ]);
   assert.equal(report.samples.length, 1);
+  assert.equal(report.samples[0].requestedAt, '2026-08-25T08:00:00+08:00');
   assert.equal(report.samples[0].comparison.outcome, 'lta-faster');
   assert.equal(report.summary.medianDeltaMinutes, -5);
 });

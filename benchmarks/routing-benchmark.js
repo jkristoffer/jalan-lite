@@ -1,4 +1,4 @@
-const { SCENARIOS, DEFAULT_DEPARTURE_TIMES, endpointUrl, isClockTime } = require('./routing-scenarios');
+const { SCENARIOS, DEFAULT_DEPARTURE_TIMES, endpointUrl, benchmarkAt, isClockTime } = require('./routing-scenarios');
 
 const DEFAULT_BASE_URL = 'https://jalan-lite.vercel.app';
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -227,8 +227,9 @@ async function runBenchmark({
 } = {}) {
   const jobs = scenarios.flatMap((scenario) => departureTimes.map((departureTime) => ({ scenario, departureTime })));
   const samples = await mapLimit(jobs, concurrency, async ({ scenario, departureTime }) => {
-    const ltaUrl = endpointUrl(baseUrl, scenario, 'lta', departureTime);
-    const oneMapUrl = endpointUrl(baseUrl, scenario, 'onemap', departureTime);
+    const requestedAt = benchmarkAt(date, departureTime);
+    const ltaUrl = endpointUrl(baseUrl, scenario, 'lta', departureTime, requestedAt);
+    const oneMapUrl = endpointUrl(baseUrl, scenario, 'onemap', departureTime, requestedAt);
     const [ltaResponse, oneMapResponse] = await Promise.all([
       fetcher(ltaUrl, timeoutMs),
       fetcher(oneMapUrl, timeoutMs),
@@ -239,6 +240,7 @@ async function runBenchmark({
       scenarioId: scenario.id,
       scenarioLabel: scenario.label,
       departureTime,
+      requestedAt,
       ltaObservationTime: lta.observationTime,
       lta,
       oneMap,
@@ -251,7 +253,7 @@ async function runBenchmark({
     requestedDate: date,
     departureTimes: [...departureTimes],
     scenarioIds: scenarios.map((scenario) => scenario.id),
-    timingNote: 'OneMap is queried for each requested departure time. LTA-native results use live BusArrival data at observation time; the observation timestamp is recorded per sample.',
+    timingNote: 'Both endpoints receive the same requestedClock timestamp. OneMap and scheduled LTA rail use that clock; live LTA BusArrival remains observation-time data unless a replay provider is used.',
     promotionCriteria: PROMOTION_CRITERIA,
     samples,
     summary: aggregateBenchmark(samples),
@@ -281,7 +283,7 @@ function formatReport(report) {
     `Coverage: LTA ${formatRate(report.summary.ltaResponseRate)}, OneMap complete ${formatRate(report.summary.oneMapCompleteRate)}, ranked path ${formatRate(report.summary.rankedPathRate)}.`,
     `Timing: scheduled-estimate ${formatRate(report.summary.scheduledEstimateRate)}, low confidence ${formatRate(report.summary.lowConfidenceRate)}, median LTA delta ${report.summary.medianDeltaMinutes ?? 'n/a'}m.`,
     `Promotion status: ${report.summary.promotion.status.toUpperCase()}.`,
-    'Note: this benchmark compares requested OneMap departure times with live-at-observation-time LTA results; it is not historical BusArrival replay.',
+    'Note: both routers receive requestedClock; LTA bus arrivals remain live-at-observation-time, so this is not historical BusArrival replay.',
   );
   return lines.join('\n');
 }

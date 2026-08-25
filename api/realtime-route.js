@@ -353,7 +353,10 @@ function catchableArrival(arrivals, distanceMetres) {
   return arrivals.find((value) => Number.isFinite(value) && value >= minimum) ?? null;
 }
 
-async function fetchStopArrivals(apiKey, stopCode, signal, now = Date.now()) {
+async function fetchStopArrivals(apiKey, stopCode, signal, now = Date.now(), arrivalProvider = null) {
+  if (typeof arrivalProvider === 'function') {
+    return arrivalProvider({ apiKey, stopCode, signal, now });
+  }
   const url = new URL(LTA_BUS_ARRIVAL_URL);
   url.searchParams.set('BusStopCode', stopCode);
   const { data } = await fetchJson(
@@ -379,7 +382,7 @@ function setLegLive(candidate, index, status, arrivals, monitored, catchableArri
   if (index === 0) leg.catchableArrivalMinutes = catchableArrivalMinutes;
 }
 
-async function attachLiveArrivals(apiKey, candidates, signal) {
+async function attachLiveArrivals(apiKey, candidates, signal, { now = Date.now(), arrivalProvider = null } = {}) {
   const byStop = new Map();
   candidates.forEach((candidate) => {
     if (!byStop.has(candidate.board.stopCode)) byStop.set(candidate.board.stopCode, []);
@@ -388,7 +391,7 @@ async function attachLiveArrivals(apiKey, candidates, signal) {
 
   await Promise.all([...byStop.entries()].map(async ([stopCode, stopCandidates]) => {
     try {
-      const services = await fetchStopArrivals(apiKey, stopCode, signal);
+      const services = await fetchStopArrivals(apiKey, stopCode, signal, now, arrivalProvider);
       stopCandidates.forEach((candidate) => {
         const live = services.get(candidate.serviceNo);
         const status = live ? 'ready' : 'unavailable';
@@ -416,7 +419,7 @@ async function attachLiveArrivals(apiKey, candidates, signal) {
   return candidates;
 }
 
-async function attachTransferLiveArrivals(apiKey, candidates, signal) {
+async function attachTransferLiveArrivals(apiKey, candidates, signal, { now = Date.now(), arrivalProvider = null } = {}) {
   const transfers = candidates.filter((candidate) => candidate.kind === 'transfer' && candidate.legs?.[1]);
   transfers.forEach((candidate) => {
     candidate.secondLiveStatus = 'unchecked';
@@ -442,7 +445,7 @@ async function attachTransferLiveArrivals(apiKey, candidates, signal) {
 
   await Promise.all([...byStop.entries()].map(async ([stopCode, stopCandidates]) => {
     try {
-      const services = await fetchStopArrivals(apiKey, stopCode, signal);
+      const services = await fetchStopArrivals(apiKey, stopCode, signal, now, arrivalProvider);
       stopCandidates.forEach((candidate) => {
         const live = services.get(candidate.secondServiceNo);
         const status = live ? 'ready' : 'unavailable';
@@ -523,6 +526,11 @@ module.exports = async function handler(req, res) {
 
     const apiKey = process.env.LTA_API_KEY;
     if (!apiKey) return res.status(503).json({ error: 'LTA_API_KEY is not configured.' });
+    const benchmark = req._benchmark || {};
+    const liveOptions = {
+      now: Number.isFinite(Number(benchmark.nowMs)) ? Number(benchmark.nowMs) : Date.now(),
+      arrivalProvider: benchmark.arrivalProvider,
+    };
 
     const [stopRows, routeRows] = await Promise.all([
       nearbyStopsApi._shared.loadStops(apiKey),
@@ -553,8 +561,8 @@ module.exports = async function handler(req, res) {
 
     const liveDeadline = createTimeoutSignal(8000);
     try {
-      await attachLiveArrivals(apiKey, candidates, liveDeadline.signal);
-      await attachTransferLiveArrivals(apiKey, candidates, liveDeadline.signal);
+      await attachLiveArrivals(apiKey, candidates, liveDeadline.signal, liveOptions);
+      await attachTransferLiveArrivals(apiKey, candidates, liveDeadline.signal, liveOptions);
     } finally {
       liveDeadline.cancel();
     }
@@ -606,6 +614,8 @@ module.exports._test = {
   oneTransferCandidates,
   accessWalkMinutes,
   catchableArrival,
+  fetchStopArrivals,
+  attachLiveArrivals,
   attachTransferLiveArrivals,
   attachServiceSchedules,
   busServiceSchedule,

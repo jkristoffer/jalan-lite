@@ -149,6 +149,12 @@ function sgClock(now = new Date()) {
   const today = `${p.year}${p.month}${p.day}`;
   return hour < 4 ? { dateKey: previousDateKey(today), seconds: hour * 3600 + minute * 60 + second + 86400 } : { dateKey: today, seconds: hour * 3600 + minute * 60 + second };
 }
+function clockFromIso(value) {
+  if (typeof value !== 'string' || !/[T ]\d{2}:\d{2}/.test(value)) return null;
+  const instant = new Date(value);
+  if (!Number.isFinite(instant.getTime())) return null;
+  return { ...sgClock(instant), epochMs: instant.getTime() };
+}
 
 function parseScheduleBytes(bytes) {
   const entries = unzipEntries(bytes);
@@ -311,4 +317,4 @@ module.exports = async function handler(req, res) {
   }
 };
 
-module.exports._shared = { GTFS_SCHEDULE_URL, unzipEntries, parseCsv, parseScheduleBytes, parseTimeSeconds, parsePoint, distanceMetres, sgClock, serviceActive, canonicalStation, allStations, nearbyStations, nearestStations, buildGraph, railJourney, loadSchedule, reset() { cachedSchedule = null; cachedAt = 0; loadingSchedule = null; } };
+module.exports._shared = { GTFS_SCHEDULE_URL, unzipEntries, parseCsv, parseScheduleBytes, parseTimeSeconds, parsePoint, distanceMetres, sgClock, clockFromIso, serviceActive, canonicalStation, allStations, nearbyStations, nearestStations, buildGraph, railJourney, loadSchedule, reset() { cachedSchedule = null; cachedAt = 0; loadingSchedule = null; } };

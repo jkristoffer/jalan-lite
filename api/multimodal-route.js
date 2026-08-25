@@ -27,14 +27,14 @@ function captureResponse() {
   };
 }
 
-async function runBusRoute(start, end) {
+async function runBusRoute(start, end, benchmark = null) {
   const capture = captureResponse();
   const query = new URLSearchParams({
     start: `${start.lat},${start.lng}`,
     end: `${end.lat},${end.lng}`,
     includeSchedule: '1',
   });
-  await busHandler({ url: `/api/realtime-route?${query}` }, capture.res);
+  await busHandler({ url: `/api/realtime-route?${query}`, _benchmark: benchmark }, capture.res);
   return capture.result;
 }
 
@@ -344,7 +344,7 @@ function sortConnectorOptions(options) {
   });
 }
 
-async function findBusRailCandidate(schedule, start, end, clock) {
+async function findBusRailCandidate(schedule, start, end, clock, benchmark = null) {
   const options = trainSchedule.nearestStations(schedule, start, 8, CONNECTOR_MAX_DISTANCE_METRES)
     .filter((station) => station.distanceMetres > CONNECTOR_MIN_DISTANCE_METRES)
     .map((station) => ({
@@ -356,7 +356,7 @@ async function findBusRailCandidate(schedule, start, end, clock) {
   const candidates = [];
   let fallback = null;
   for (const option of sortConnectorOptions(options).slice(0, MAX_CONNECTOR_STATIONS)) {
-    const connectorBusResult = await runBusRoute(start, railStationPoint(option.station)).catch(() => null);
+    const connectorBusResult = await runBusRoute(start, railStationPoint(option.station), benchmark).catch(() => null);
     const payload = connectorBusResult?.body;
     const bus = usableBusCandidate(payload);
     if (!fallback) fallback = composeBusRail(bus, option.rail, option.station);
@@ -378,13 +378,18 @@ module.exports = async function handler(req, res) {
   const end = trainSchedule.parsePoint(url.searchParams.get('end'));
   if (!start || !end) return res.status(400).json({ error: 'Valid Singapore start and end coordinates are required.' });
 
-  const busPromise = runBusRoute(start, end).catch((error) => ({ status: 502, body: { error: error.message || 'Bus routing unavailable.' } }));
+  const benchmarkAt = url.searchParams.get('requestedClock');
+  const benchmarkClock = benchmarkAt ? trainSchedule.clockFromIso(benchmarkAt) : null;
+  if (benchmarkAt && !benchmarkClock) return res.status(400).json({ error: 'requestedClock must be a valid timestamp.' });
+  const benchmark = benchmarkClock ? { ...(req._benchmark || {}), clock: benchmarkClock } : req._benchmark || null;
+
+  const busPromise = runBusRoute(start, end, benchmark).catch((error) => ({ status: 502, body: { error: error.message || 'Bus routing unavailable.' } }));
   const apiKey = process.env.LTA_API_KEY;
   const schedulePromise = apiKey
     ? trainSchedule.loadSchedule(apiKey).then((schedule) => ({ schedule })).catch((error) => ({ error }))
     : Promise.resolve({ error: new Error('LTA_API_KEY is not configured.') });
   const [busResult, scheduleResult] = await Promise.all([busPromise, schedulePromise]);
-  const clock = trainSchedule.sgClock();
+  const clock = benchmark?.clock || trainSchedule.sgClock();
   let rail = null;
   const intermodal = [];
 
@@ -392,13 +397,13 @@ module.exports = async function handler(req, res) {
     const schedule = scheduleResult.schedule;
     rail = trainSchedule.railJourney(schedule, start, end, { clock });
 
-    const busRail = await findBusRailCandidate(schedule, start, end, clock);
+    const busRail = await findBusRailCandidate(schedule, start, end, clock, benchmark);
     if (busRail) intermodal.push(busRail);
 
     const destinationConnector = trainSchedule.nearestStations(schedule, end, 1, CONNECTOR_MAX_DISTANCE_METRES)[0];
     if (destinationConnector && destinationConnector.distanceMetres > CONNECTOR_MIN_DISTANCE_METRES) {
       const railBeforeBus = trainSchedule.railJourney(schedule, start, railStationPoint(destinationConnector), { clock, endStations: exactStation(destinationConnector) });
-      const connectorBusResult = await runBusRoute(railStationPoint(destinationConnector), end).catch(() => null);
+      const connectorBusResult = await runBusRoute(railStationPoint(destinationConnector), end, benchmark).catch(() => null);
       const payload = connectorBusResult?.body;
       const connectorBus = usableBusCandidate(payload);
       const timedCandidates = directBusCandidates(payload)

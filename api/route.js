@@ -1,8 +1,9 @@
 
 const { getOneMapToken } = require('./_onemap-auth');
 const { fetchJson, safeUpstreamFailure } = require('./_upstream');
+const { clockFromIso } = require('../train-schedule')._shared;
 
-function sgDateTime() {
+function sgDateTime(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Singapore',
     month: '2-digit',
@@ -12,7 +13,7 @@ function sgDateTime() {
     minute: '2-digit',
     second: '2-digit',
     hourCycle: 'h23',
-  }).formatToParts(new Date());
+  }).formatToParts(now);
   const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
   return { date: p.month + '-' + p.day + '-' + p.year, time: p.hour + ':' + p.minute + ':' + p.second, hour: Number(p.hour) };
 }
@@ -177,8 +178,16 @@ module.exports = async function handler(req, res) {
     if (!validCoord(start) || !validCoord(end)) return res.status(400).json({ error: 'Valid start and end coordinates are required.' });
     if (requestedTime && !validTime(requestedTime)) return res.status(400).json({ error: 'Time must use HH:MM format.' });
 
+    const requestUrl = new URL(req.url || '', 'https://dailyloop.local');
+    const benchmarkAt = String(req.query?.requestedClock
+      || req.query?.requestedclock
+      || requestUrl.searchParams.get('requestedClock')
+      || requestUrl.searchParams.get('requestedclock')
+      || '').trim();
+    const benchmarkClock = benchmarkAt ? clockFromIso(benchmarkAt) : null;
+    if (benchmarkAt && !benchmarkClock) return res.status(400).json({ error: 'requestedClock must be a valid timestamp.' });
     const token = await getOneMapToken();
-    const now = sgDateTime();
+    const now = sgDateTime(benchmarkClock ? new Date(benchmarkClock.epochMs) : new Date());
     const planned = Boolean(requestedTime);
     const queryTime = planned ? requestedTime + ':00' : now.time;
 
@@ -218,4 +227,4 @@ module.exports = async function handler(req, res) {
   }
 };
 
-module.exports._test = { isRoutePayload, isRouteResponsePayload, requestRoute };
+module.exports._test = { isRoutePayload, isRouteResponsePayload, requestRoute, sgDateTime };

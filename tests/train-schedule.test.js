@@ -30,6 +30,14 @@ test('parses quoted GTFS CSV fields',()=>{
   assert.deepEqual(rows,[{stop_id:'A',stop_name:'Alpha, Station'}]);
 });
 
+test('creates a Singapore schedule clock from a benchmark timestamp',()=>{
+  const clock=train.clockFromIso('2026-08-25T08:00:00+08:00');
+  assert.equal(clock.dateKey,'20260825');
+  assert.equal(clock.seconds,8*3600);
+  assert.equal(Number.isFinite(clock.epochMs),true);
+  assert.equal(train.clockFromIso('not-a-timestamp'),null);
+});
+
 test('routes across an MRT transfer using scheduled stop times',()=>{
   const schedule=scheduleFixture();
   const result=train.railJourney(schedule,{lat:1.30,lng:103.80},{lat:1.33,lng:103.83},{clock:{dateKey:'20260825',seconds:7*3600+55*60},railRadius:100});

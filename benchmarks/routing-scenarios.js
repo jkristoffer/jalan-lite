@@ -35,11 +35,16 @@ function coordinate(point) {
   return `${point.lat},${point.lng}`;
 }
 
-function endpointUrl(baseUrl, scenario, endpoint, departureTime) {
+function benchmarkAt(date, departureTime) {
+  return `${date}T${departureTime}:00+08:00`;
+}
+
+function endpointUrl(baseUrl, scenario, endpoint, departureTime, benchmarkTimestamp = null) {
   const path = endpoint === 'onemap' ? '/api/route' : '/api/multimodal-route';
   const url = new URL(path, `${String(baseUrl).replace(/\/$/, '')}/`);
   url.searchParams.set('start', coordinate(scenario.start));
   url.searchParams.set('end', coordinate(scenario.end));
+  if (benchmarkTimestamp) url.searchParams.set('requestedClock', benchmarkTimestamp);
   if (endpoint === 'onemap') {
     url.searchParams.set('time', departureTime);
     url.searchParams.set('timeMode', 'depart');
@@ -51,5 +56,6 @@ module.exports = {
   SCENARIOS,
   DEFAULT_DEPARTURE_TIMES,
   isClockTime,
+  benchmarkAt,
   endpointUrl,
 };
