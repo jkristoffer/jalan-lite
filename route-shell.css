@@ -185,3 +185,29 @@
 .dashboard-pane{scroll-snap-stop:normal}
 
 .dashboard-pager{scroll-behavior:auto}
+
+
+/* Pane edge and Route map spacing cleanup */
+.dashboard-mode .dashboard-pane > .journey-hero,
+.dashboard-mode .dashboard-pane > .best-route-card,
+.dashboard-mode .dashboard-pane > .timing-card,
+.dashboard-mode .dashboard-pane > .notifications-card {
+  border-bottom: 0;
+}
+.dashboard-mode .dashboard-pane > :first-child {
+  border-top: 0 !important;
+}
+.dashboard-mode .dashboard-pane > :last-child {
+  border-bottom: 0 !important;
+}
+.dashboard-mode #dashboard-pane-route {
+  padding-left: 0;
+  padding-right: 0;
+}
+.dashboard-mode #dashboard-pane-route > .route-inline-map-sticky {
+  top: 0;
+}
+.dashboard-mode #dashboard-pane-route > .route-inline-map-sticky .route-inline-map-wrap {
+  width: 100%;
+  border-top: 0;
+}
