@@ -109,7 +109,7 @@
   }
 
   function brand() {
-    return '<div class="route-brand"><div class="route-wordmark">jalan</div><div class="route-country">SG</div></div>';
+    return '<div class="route-brand"><svg class="dailyloop-mark" aria-hidden="true" viewBox="0 0 32 32" fill="none"><path d="M16 3.5a12.5 12.5 0 0 0 0 25" stroke="var(--leaf-green,#4A8D53)" stroke-width="3" stroke-linecap="round"/><path d="M16 28.5a12.5 12.5 0 0 0 0-25" stroke="var(--sky-blue,#5992C4)" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="3.5" r="1.75" fill="var(--mandarin,#E69641)"/></svg><div class="route-wordmark">DailyLoop</div><div class="route-country">SG</div></div>';
   }
 
   function network() {
@@ -401,7 +401,7 @@
   function focusView() {
     const info = focusInfo();
     const freshness = liveFreshness();
-    return `<div class="focus-view"><div class="focus-topbar"><div><div class="route-kicker">Jalan · focus mode</div><div class="focus-route">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div><button class="focus-exit" data-route-action="exit-focus">Exit</button></div><main class="focus-face"><div id="focus-phase" class="focus-phase focus-phase-${escapeHtml(info.phase)}">${escapeHtml(info.label)}</div><div id="focus-countdown" class="focus-countdown" role="timer" aria-live="off" aria-label="${escapeHtml(info.label)} ${escapeHtml(info.countdown)}">${escapeHtml(info.countdown)}</div><div id="focus-context" class="focus-context">${escapeHtml(info.context)}</div></main><div class="focus-footer"><span id="focus-freshness">${escapeHtml(freshness)}</span><span>Live route data updates automatically</span></div></div>`;
+    return `<div class="focus-view"><div class="focus-topbar"><div><div class="route-kicker">DailyLoop · focus mode</div><div class="focus-route">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div><button class="focus-exit" data-route-action="exit-focus">Exit</button></div><main class="focus-face"><div id="focus-phase" class="focus-phase focus-phase-${escapeHtml(info.phase)}">${escapeHtml(info.label)}</div><div id="focus-countdown" class="focus-countdown" role="timer" aria-live="off" aria-label="${escapeHtml(info.label)} ${escapeHtml(info.countdown)}">${escapeHtml(info.countdown)}</div><div id="focus-context" class="focus-context">${escapeHtml(info.context)}</div></main><div class="focus-footer"><span id="focus-freshness">${escapeHtml(freshness)}</span><span>Live route data updates automatically</span></div></div>`;
   }
 
   function updateFocusDom() {
@@ -503,7 +503,7 @@
   }
 
   function card() {
-    if (!saved.originPoint || !saved.destinationPoint) return '<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Map both endpoints</h2><p>Choose exact points so Jalan can calculate the journey.</p></section>';
+    if (!saved.originPoint || !saved.destinationPoint) return '<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Map both endpoints</h2><p>Choose exact points so DailyLoop can calculate the journey.</p></section>';
     if (routeState.status === 'loading') return '<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Finding route…</h2><p>Checking Singapore public transport.</p></section>';
     if (routeState.status === 'error') return `<section class="best-route-card"><div class="route-card-label">Journey timeline</div><h2>Routing unavailable</h2><p>${escapeHtml(routeState.error)}</p><button class="route-link" data-route-action="refresh">Retry</button></section>`;
     const itinerary = routeState.data;
@@ -800,7 +800,7 @@
     else if (rerouted) actions = '<button class="route-primary" data-route-action="demo-reset">Replay alert</button><button class="route-link" data-route-action="demo-fallback">Preview no-safe-route fallback</button>';
     else if (fallback) actions = '<button class="route-primary" data-route-action="demo-reroute">Try reroute again</button><button class="route-link" data-route-action="demo-reset">Back to alert</button>';
     else actions = '<button class="route-primary" data-route-action="demo-reroute">Find a better route</button><button class="route-link" data-route-action="demo-fallback">Preview no-safe-route fallback</button>';
-    return `<div class="route-demo"><div class="route-demo-inner">${brand()}<div class="route-demo-topbar"><button class="picker-back" data-route-action="demo-close">‹</button><div><div class="route-kicker">Interaction preview</div><div class="picker-title">Disruption flow</div></div></div><div class="route-demo-intro"><div class="route-kicker">Mock LTA incident</div><h1>${escapeHtml(summary)}</h1><p>See how Jalan warns the commuter, finds an alternative, and handles a route with no safe replacement.</p></div><section class="route-demo-alert${alertClass}"><div class="route-demo-alert-top"><span class="route-disruption-label"><span class="live-dot"></span>LTA service alert</span><span class="route-demo-preview-tag">PREVIEW</span></div><h2>East West Line disruption</h2><p>Trains are delayed between Paya Lebar and City Hall.</p></section>${status}<section class="route-demo-card"><div class="route-demo-summary"><div><span class="route-card-label">Journey</span><strong>${duration}</strong></div><span>${rerouted ? '0 transfers' : '1 transfer'}</span></div><div class="route-demo-route-label">${escapeHtml(rerouted ? 'Replacement route' : 'Original route')}</div>${demoTimeline(rerouted)}</section><div class="route-demo-actions">${actions}</div><p class="route-demo-footnote">Mock UI only — no live route or LTA data was changed.</p></div></div>`;
+    return `<div class="route-demo"><div class="route-demo-inner">${brand()}<div class="route-demo-topbar"><button class="picker-back" data-route-action="demo-close">‹</button><div><div class="route-kicker">Interaction preview</div><div class="picker-title">Disruption flow</div></div></div><div class="route-demo-intro"><div class="route-kicker">Mock LTA incident</div><h1>${escapeHtml(summary)}</h1><p>See how DailyLoop warns the commuter, finds an alternative, and handles a route with no safe replacement.</p></div><section class="route-demo-alert${alertClass}"><div class="route-demo-alert-top"><span class="route-disruption-label"><span class="live-dot"></span>LTA service alert</span><span class="route-demo-preview-tag">PREVIEW</span></div><h2>East West Line disruption</h2><p>Trains are delayed between Paya Lebar and City Hall.</p></section>${status}<section class="route-demo-card"><div class="route-demo-summary"><div><span class="route-card-label">Journey</span><strong>${duration}</strong></div><span>${rerouted ? '0 transfers' : '1 transfer'}</span></div><div class="route-demo-route-label">${escapeHtml(rerouted ? 'Replacement route' : 'Original route')}</div>${demoTimeline(rerouted)}</section><div class="route-demo-actions">${actions}</div><p class="route-demo-footnote">Mock UI only — no live route or LTA data was changed.</p></div></div>`;
   }
 
   function hasLiveTiming(itinerary) {

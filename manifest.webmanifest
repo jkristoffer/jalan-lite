@@ -1,13 +1,13 @@
 {
   "id": "/",
-  "name": "Jalan Lite",
-  "short_name": "Jalan",
-  "description": "Fast Singapore bus arrival checks for your saved commutes.",
+  "name": "DailyLoop",
+  "short_name": "DailyLoop",
+  "description": "Plan and follow Singapore bus and MRT commutes with live updates.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F7F6F3",
-  "theme_color": "#F7F6F3",
+  "background_color": "#FAFAF8",
+  "theme_color": "#FAFAF8",
   "lang": "en-SG",
   "categories": [
     "travel",
