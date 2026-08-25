@@ -421,6 +421,21 @@
     return { departure, arrival };
   }
 
+  function journeyLegState(itinerary, now = Date.now()) {
+    const { departure, arrival } = focusTimes();
+    if (!itinerary || !departure || !arrival) return { currentIndex: null, nextIndex: null };
+    const legs = temporalLegs(itinerary, departure);
+    if (now < departure) return { currentIndex: null, nextIndex: legs[0]?.index ?? null };
+    if (now >= arrival) return { currentIndex: null, nextIndex: null };
+    const current = legs.find((entry) => now >= entry.start && now < entry.end);
+    if (current) {
+      const next = legs.slice(current.index + 1).find((entry) => entry.start > now);
+      return { currentIndex: current.index, nextIndex: next?.index ?? null };
+    }
+    const next = legs.find((entry) => entry.start > now);
+    return { currentIndex: null, nextIndex: next?.index ?? null };
+  }
+
 
   function temporalLegs(itinerary, departure) {
     let cursor = departure;
@@ -635,7 +650,19 @@
   function timeline(itinerary) {
     const legs = itinerary?.legs || [];
     if (!legs.length) return '<div class="timeline-empty">No step-by-step details returned.</div>';
-    return `<div class="timeline">${legs.map((leg, index) => `${transferPoint(legs[index - 1], leg)}<button type="button" class="timeline-item${selectedLegIndex === index ? ' selected' : ''}${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? ' affected' : ''}" data-route-action="leg" data-route-leg="${index}"><div class="timeline-rail"><span class="timeline-dot ${leg.mode.toLowerCase()}"></span></div><div class="timeline-body"><div class="timeline-head"><strong>${escapeHtml(legTitle(leg))}</strong><span class="timeline-mode">${leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)}</span></div><div class="timeline-meta">${escapeHtml(legMeta(leg))}</div>${confidenceMarkup(leg)}${leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? '<div class="timeline-alert-label">LTA service alert</div>' : ''}<div class="timeline-foot"><span>${escapeHtml(legTimes(leg))}</span>${leg.mode === 'WALK' ? '' : timing(leg)}</div></div></button>`).join('')}</div>`;
+    const journeyState = journeyLegState(itinerary);
+    return '<div class="timeline">' + legs.map((leg, index) => {
+      const current = journeyState.currentIndex === index;
+      const next = journeyState.nextIndex === index;
+      const marker = current
+        ? '<span class="timeline-current-label current">Now</span>'
+        : next
+          ? '<span class="timeline-current-label next">Next</span>'
+          : '';
+      const stateClass = (current ? ' current' : '') + (next ? ' next' : '');
+      const affected = leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? ' affected' : '';
+      return transferPoint(legs[index - 1], leg) + '<button type="button" class="timeline-item' + (selectedLegIndex === index ? ' selected' : '') + stateClass + affected + '" data-route-action="leg" data-route-leg="' + index + '" aria-label="' + escapeHtml(legTitle(leg) + (current ? ', now' : next ? ', next' : '')) + '"><div class="timeline-rail"><span class="timeline-dot ' + leg.mode.toLowerCase() + '"></span></div><div class="timeline-body"><div class="timeline-head"><strong>' + escapeHtml(legTitle(leg)) + '</strong><span class="timeline-head-side">' + marker + '<span class="timeline-mode">' + (leg.mode === 'SUBWAY' ? 'MRT' : escapeHtml(leg.mode)) + '</span></span></div><div class="timeline-meta">' + escapeHtml(legMeta(leg)) + '</div>' + confidenceMarkup(leg) + (leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText ? '<div class="timeline-alert-label">LTA service alert</div>' : '') + '<div class="timeline-foot"><span>' + escapeHtml(legTimes(leg)) + '</span>' + (leg.mode === 'WALK' ? '' : timing(leg)) + '</div></div></button>';
+    }).join('') + '</div>';
   }
 
   function itinerarySignature(itinerary) {
@@ -822,6 +849,33 @@
     return `<nav class='dashboard-nav' aria-label='Commute sections' role='tablist'>${panes.map((pane) => { const selected = pane === active; const badge = pane === 'live' && alerts.length ? `<span class='dashboard-nav-badge'>${alerts.length}</span>` : ''; return `<button id='dashboard-tab-${pane}' type='button' role='tab' aria-selected='${selected}' aria-controls='dashboard-pane-${pane}' class='dashboard-nav-button${selected ? ' selected' : ''}' data-route-action='dashboard-pane' data-dashboard-pane='${pane}'>${dashboardPaneLabel(pane)}${badge}</button>`; }).join('')}</nav>`;
   }
 
+  function liveLegList(itinerary) {
+    const entries = (itinerary?.legs || [])
+      .map((leg, index) => ({ leg, index }))
+      .filter(({ leg }) => ['BUS', 'SUBWAY'].includes(leg.mode));
+    if (!entries.length) return '';
+    const journeyState = journeyLegState(itinerary);
+    return '<div class="live-leg-list"><div class="route-card-label">Live journey legs</div><div class="live-leg-lines">' +
+      entries.map(({ leg, index }) => {
+        const current = journeyState.currentIndex === index;
+        const next = journeyState.nextIndex === index;
+        const status = legConfidence(leg);
+        const age = liveTools.ageLabel(status.updatedAt);
+        const source = status.source + (age ? ' · ' + age : '');
+        const marker = current
+          ? '<span class="timeline-current-label current">Now</span>'
+          : next
+            ? '<span class="timeline-current-label next">Next</span>'
+            : '';
+        return '<button type="button" class="live-leg-row' + (current ? ' current' : '') + (next ? ' next' : '') + '" data-route-action="leg" data-route-leg="' + index + '" aria-label="' + escapeHtml(legTitle(leg) + (current ? ', now' : next ? ', next' : '')) + '">' +
+          '<span class="live-leg-top"><span class="live-leg-title"><strong>' + escapeHtml(legTitle(leg)) + '</strong>' + marker + '</span><span class="live-leg-status"><span class="live-leg-confidence ' + escapeHtml(status.tone) + '">' + escapeHtml(status.label) + '</span><span class="live-leg-source">' + escapeHtml(source) + '</span></span></span>' +
+          '<span class="live-leg-meta">' + escapeHtml(legMeta(leg)) + '</span>' +
+          '<span class="live-leg-bottom"><span>' + escapeHtml(legTimes(leg)) + '</span>' + timing(leg) + '</span>' +
+          '</button>';
+      }).join('') +
+      '</div></div>';
+  }
+
   function timingCard() {
     const itinerary = routeState.data;
     const hasBus = itinerary?.legs.some((leg) => leg.mode === 'BUS');
@@ -844,7 +898,7 @@
         : !hasLiveTiming(itinerary)
           ? 'No live feed'
           : 'Refresh live data';
-    return `<section class='timing-card'><div class='timing-heading'><div><div class='route-card-label'>Timing confidence</div><h2>${sourceHeading}</h2></div><div class='timing-status'><span class='live-state live-state-${escapeHtml(summary.tone)}'>${escapeHtml(summary.label)}</span><span id='live-freshness' class='live-freshness'>${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class='timing-controls'><span class='timing-control-note'>${escapeHtml(liveFreshness())}</span><button type='button' class='timing-refresh' data-route-action='refresh-live' ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class='route-link demo-disruption-link' data-route-action='demo-disruption'>Preview disruption flow</button></section>`;
+    return `<section class='timing-card'><div class='timing-heading'><div><div class='route-card-label'>Timing confidence</div><h2>${sourceHeading}</h2></div><div class='timing-status'><span class='live-state live-state-${escapeHtml(summary.tone)}'>${escapeHtml(summary.label)}</span><span id='live-freshness' class='live-freshness'>${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p>${liveLegList(itinerary)}<div class='timing-controls'><span class='timing-control-note'>${escapeHtml(liveFreshness())}</span><button type='button' class='timing-refresh' data-route-action='refresh-live' ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class='route-link demo-disruption-link' data-route-action='demo-disruption'>Preview disruption flow</button></section>`;
   }
 
   function routeActions() {
@@ -950,7 +1004,9 @@
     const ready = Boolean(routeState.data);
     const heading = routeState.status === 'error' ? 'Map unavailable' : ready ? 'Route map' : 'Preparing route map';
     const detail = routeState.status === 'error' ? 'The journey timeline is still available below.' : ready ? 'Tap a leg to focus it.' : 'The map will appear once the route is ready.';
-    return '<div class="route-inline-map-sticky"><div class="route-inline-map-heading"><span class="route-card-label">Route map</span><span class="route-inline-map-hint">Tap a leg to focus</span></div><div class="route-inline-map-wrap"><div id="route-inline-map" class="route-inline-map" role="img" aria-label="Route map"></div><div id="route-inline-fallback" class="map-fallback"' + (ready ? ' hidden' : '') + '><strong>' + escapeHtml(heading) + '</strong><span>' + escapeHtml(detail) + '</span></div></div></div>';
+    const selectedLeg = ready && Number.isInteger(selectedLegIndex) ? routeState.data.legs?.[selectedLegIndex] : null;
+    const hint = selectedLeg ? 'Showing ' + legTitle(selectedLeg) : ready ? 'Tap a leg to focus' : 'Route updates here';
+    return '<div class="route-inline-map-sticky"><div class="route-inline-map-heading"><span class="route-card-label">Route map</span><span class="route-inline-map-hint">' + escapeHtml(hint) + '</span></div><div class="route-inline-map-wrap"><div id="route-inline-map" class="route-inline-map" role="img" aria-label="Route map"></div><div id="route-inline-fallback" class="map-fallback"' + (ready ? ' hidden' : '') + '><strong>' + escapeHtml(heading) + '</strong><span>' + escapeHtml(detail) + '</span></div></div></div>';
   }
 
   function dashboard() {
@@ -1293,13 +1349,16 @@
     const itinerary = routeState.data;
     if (!itinerary) return;
 
+    const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
+    const hint = shell.querySelector('.route-inline-map-hint');
+    if (hint) hint.textContent = selectedLeg ? 'Showing ' + legTitle(selectedLeg) : 'Tap a leg to focus';
+
     shell.querySelectorAll('.timeline-item[data-route-leg]').forEach((item) => {
       item.classList.toggle('selected', Number(item.dataset.routeLeg) === selectedLegIndex);
     });
 
     if (!targetMap || !window.mapboxgl) return;
     const features = mapFeatures(itinerary);
-    const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
     const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
     const selectedOpacity = selectedLeg ? 0.22 : 0.88;
 
