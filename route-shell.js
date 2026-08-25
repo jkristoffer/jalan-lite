@@ -1039,15 +1039,17 @@
 
   function updateInlineRouteSelection(targetMap = map) {
     const itinerary = routeState.data;
-    if (!targetMap || !itinerary || !window.mapboxgl) return;
-    const features = mapFeatures(itinerary);
-    const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
-    const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
-    const selectedOpacity = selectedLeg ? 0.22 : 0.88;
+    if (!itinerary) return;
 
     shell.querySelectorAll('.timeline-item[data-route-leg]').forEach((item) => {
       item.classList.toggle('selected', Number(item.dataset.routeLeg) === selectedLegIndex);
     });
+
+    if (!targetMap || !window.mapboxgl) return;
+    const features = mapFeatures(itinerary);
+    const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
+    const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
+    const selectedOpacity = selectedLeg ? 0.22 : 0.88;
 
     try {
       ['route-walk', 'route-bus', 'route-mrt'].forEach((layerId) => {
