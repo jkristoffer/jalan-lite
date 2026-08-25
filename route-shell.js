@@ -6,6 +6,9 @@
   const launcher = document.createElement('button');
   const disruptionTools = window.JalanDisruptions;
   const liveTools = window.JalanLiveStatus;
+  const runtime = window.JalanRuntime;
+  const routeRequests = runtime.createRequestCoordinator();
+  const liveRequests = runtime.createRequestCoordinator();
 
   let saved = load();
   let draftState = draft(saved);
@@ -13,6 +16,7 @@
   let mapPosition = { center: { ...DEFAULT_CENTER }, zoom: 14, label: 'Singapore' };
   let routeState = { status: 'idle', data: null, error: '' };
   let map = null;
+  let mapGeneration = 0;
   let viewing = false;
   let selectedLegIndex = null;
   let liveRefreshTimer = null;
@@ -411,8 +415,8 @@
     render();
     try {
       const response = await fetch('/api/push-config');
-      const data = await response.json();
-      if (!response.ok || !data.publicKey) {
+      const data = await runtime.readJson(response, 'Push setup returned an invalid response.');
+      if (!response.ok || !runtime.isPushConfigPayload(data)) {
         notificationState = 'pending';
         notificationMessage = 'Add the VAPID key and subscription store before asking for permission.';
         render();
@@ -492,6 +496,36 @@
     return Boolean(itinerary?.legs?.some((leg) => (leg.mode === 'BUS' && leg.liveStatus === 'error') || (leg.mode === 'SUBWAY' && leg.trainStatus === 'error')));
   }
 
+  function snapshotLiveState(itinerary) {
+    if (!itinerary) return null;
+    return {
+      itinerary,
+      liveAlerts: itinerary.liveAlerts,
+      trainFeedUpdatedAt: itinerary.trainFeedUpdatedAt,
+      legs: itinerary.legs.map((leg) => ({
+        leg,
+        live: leg.live,
+        liveUpdatedAt: leg.liveUpdatedAt,
+        liveStatus: leg.liveStatus,
+        trainStatus: leg.trainStatus,
+        trainRealtime: leg.trainRealtime,
+      })),
+    };
+  }
+
+  function restoreLiveState(snapshot) {
+    if (!snapshot) return;
+    snapshot.legs.forEach((entry) => {
+      entry.leg.live = entry.live;
+      entry.leg.liveUpdatedAt = entry.liveUpdatedAt;
+      entry.leg.liveStatus = entry.liveStatus;
+      entry.leg.trainStatus = entry.trainStatus;
+      entry.leg.trainRealtime = entry.trainRealtime;
+    });
+    snapshot.itinerary.liveAlerts = snapshot.liveAlerts;
+    snapshot.itinerary.trainFeedUpdatedAt = snapshot.trainFeedUpdatedAt;
+  }
+
   function liveFreshness() {
     if (liveRefreshStatus === 'loading') return 'Updating…';
     if (liveRefreshStatus === 'degraded' && !liveUpdatedAt) return 'LTA unavailable';
@@ -522,6 +556,13 @@
     liveRefreshTimer = null;
   }
 
+  function cancelAsyncWork() {
+    stopLiveRefresh();
+    routeRequests.abort();
+    liveRequests.abort();
+    liveRefreshInFlight = false;
+  }
+
   function syncLiveRefresh() {
     if (!canRefreshLive()) {
       stopLiveRefresh();
@@ -536,31 +577,35 @@
   }
 
   async function refreshLiveTimings() {
-    if (!canRefreshLive() || liveRefreshInFlight) {
+    if (!canRefreshLive() || liveRefreshInFlight || liveRequests.hasActive()) {
       syncLiveRefresh();
       return;
     }
     const itinerary = routeState.data;
+    const request = liveRequests.start();
     liveRefreshInFlight = true;
     liveRefreshStatus = 'loading';
     updateLiveFreshnessDom();
     try {
-      await Promise.all([liveBus(itinerary), liveTrain(itinerary)]);
-      if (routeState.data === itinerary) {
+      await Promise.all([liveBus(itinerary, request.controller.signal), liveTrain(itinerary, request.controller.signal)]);
+      if (liveRequests.isCurrent(request) && routeState.data === itinerary) {
         const degraded = liveHasError(itinerary);
         if (!degraded && hasLiveTiming(itinerary)) liveUpdatedAt = Date.now();
         liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(itinerary) ? 'ready' : 'idle');
         updateLiveFreshnessDom();
         if (canRefreshLive()) render();
       }
-    } catch {
-      if (routeState.data === itinerary) {
+    } catch (error) {
+      if (error?.name !== 'AbortError' && liveRequests.isCurrent(request) && routeState.data === itinerary) {
         liveRefreshStatus = 'degraded';
         updateLiveFreshnessDom();
       }
     } finally {
-      liveRefreshInFlight = false;
-      syncLiveRefresh();
+      if (liveRequests.isCurrent(request)) {
+        liveRequests.finish(request);
+        liveRefreshInFlight = false;
+        syncLiveRefresh();
+      }
     }
   }
 
@@ -571,6 +616,7 @@
   }
 
   function destroyMap() {
+    mapGeneration += 1;
     if (map) {
       try { map.remove(); } catch {}
     }
@@ -607,36 +653,43 @@
     if (coordinates) coordinates.textContent = `${mapPosition.center.lat.toFixed(5)}, ${mapPosition.center.lng.toFixed(5)}`;
   }
 
-  async function reverseLabel() {
+  async function reverseLabel(generation = mapGeneration) {
+    if (generation !== mapGeneration || !pickerField) return;
     try {
       const response = await fetch(`/api/location?lat=${mapPosition.center.lat}&lng=${mapPosition.center.lng}`);
-      const data = await response.json();
+      const data = await runtime.readJson(response, 'Location lookup unavailable.');
+      if (generation !== mapGeneration || !pickerField) return;
       mapPosition.label = response.ok && data.label ? data.label : 'Pinned location';
-    } catch { mapPosition.label = 'Pinned location'; }
+    } catch { if (generation === mapGeneration && pickerField) mapPosition.label = 'Pinned location'; }
+    if (generation !== mapGeneration || !pickerField) return;
     updatePickerDom();
   }
 
   async function mapToken() {
     const response = await fetch('/api/map-config');
-    const data = await response.json();
-    if (!response.ok || !data.token) throw new Error(data.error || 'Map unavailable');
+    const data = await runtime.readJson(response, 'Map service returned an invalid response.');
+    if (!response.ok || typeof data.token !== 'string' || !data.token.startsWith('pk.')) throw new Error(data.error || 'Map unavailable');
     return data.token;
   }
 
   async function renderPickerMap() {
+    const generation = mapGeneration;
     const container = document.getElementById('route-map');
     const fallback = document.getElementById('map-fallback');
     if (!container || !pickerField) return;
     if (!window.mapboxgl) { fallback.hidden = false; return; }
     try {
       mapboxgl.accessToken = await mapToken();
-      map = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [mapPosition.center.lng, mapPosition.center.lat], zoom: mapPosition.zoom, minZoom: 10.5, maxZoom: 18.5, maxBounds: [[103.55, 1.15], [104.1, 1.49]], dragRotate: false, touchPitch: false });
-      map.touchZoomRotate.disableRotation();
-      map.on('load', reverseLabel);
-      map.on('move', () => { const center = map.getCenter(); mapPosition.center = { lat: center.lat, lng: center.lng }; mapPosition.zoom = map.getZoom(); mapPosition.label = 'Pinned location'; updatePickerDom(); });
-      map.on('moveend', reverseLabel);
-      map.on('error', () => { fallback.hidden = false; });
-    } catch { fallback.hidden = false; }
+      if (generation !== mapGeneration || !pickerField || !document.getElementById('route-map')) return;
+      const nextMap = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [mapPosition.center.lng, mapPosition.center.lat], zoom: mapPosition.zoom, minZoom: 10.5, maxZoom: 18.5, maxBounds: [[103.55, 1.15], [104.1, 1.49]], dragRotate: false, touchPitch: false });
+      if (generation !== mapGeneration || !pickerField) { nextMap.remove(); return; }
+      map = nextMap;
+      nextMap.touchZoomRotate.disableRotation();
+      nextMap.on('load', () => { if (generation === mapGeneration && pickerField && map === nextMap) reverseLabel(generation); });
+      nextMap.on('move', () => { if (generation !== mapGeneration || map !== nextMap) return; const center = nextMap.getCenter(); mapPosition.center = { lat: center.lat, lng: center.lng }; mapPosition.zoom = nextMap.getZoom(); mapPosition.label = 'Pinned location'; updatePickerDom(); });
+      nextMap.on('moveend', () => { if (generation === mapGeneration && pickerField && map === nextMap) reverseLabel(generation); });
+      nextMap.on('error', () => { if (generation === mapGeneration && fallback) fallback.hidden = false; });
+    } catch { if (generation === mapGeneration && fallback) fallback.hidden = false; }
   }
 
   function decodePolyline(value, precision = 5) {
@@ -654,6 +707,7 @@
   }
 
   async function renderViewerMap() {
+    const generation = mapGeneration;
     const container = document.getElementById('route-viewer-map');
     const fallback = document.getElementById('viewer-fallback');
     const itinerary = routeState.data;
@@ -661,43 +715,47 @@
     if (!window.mapboxgl) { fallback.hidden = false; return; }
     try {
       mapboxgl.accessToken = await mapToken();
+      if (generation !== mapGeneration || !viewing || !document.getElementById('route-viewer-map')) return;
       const features = itinerary.legs.map((leg, index) => { const coordinates = leg.geometry ? decodePolyline(leg.geometry) : []; return coordinates.length > 1 ? { type: 'Feature', properties: { mode: leg.mode, index }, geometry: { type: 'LineString', coordinates } } : null; }).filter(Boolean);
       const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
       const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
-      map = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [saved.originPoint.lng, saved.originPoint.lat], zoom: 12.5, dragRotate: false, touchPitch: false });
-      map.touchZoomRotate.disableRotation();
-      map.on('load', () => {
+      const nextMap = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [saved.originPoint.lng, saved.originPoint.lat], zoom: 12.5, dragRotate: false, touchPitch: false });
+      if (generation !== mapGeneration || !viewing) { nextMap.remove(); return; }
+      map = nextMap;
+      nextMap.touchZoomRotate.disableRotation();
+      nextMap.on('load', () => {
+        if (generation !== mapGeneration || !viewing || map !== nextMap) return;
         if (features.length) {
-          map.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+          nextMap.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features } });
           const opacity = selectedLeg ? 0.22 : 0.88;
-          map.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': '#777', 'line-width': 4, 'line-opacity': opacity, 'line-dasharray': [1, 1.5] } });
-          map.addLayer({ id: 'route-bus', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'BUS'], paint: { 'line-color': '#1f7a4d', 'line-width': 6, 'line-opacity': opacity } });
-          map.addLayer({ id: 'route-mrt', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'SUBWAY'], paint: { 'line-color': '#222', 'line-width': 7, 'line-opacity': opacity } });
-          if (selectedLeg) map.addLayer({ id: 'route-selected', type: 'line', source: 'route', filter: ['==', ['get', 'index'], selectedLegIndex], paint: { 'line-color': '#D42E12', 'line-width': 9, 'line-opacity': 1 } });
+          nextMap.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': '#777', 'line-width': 4, 'line-opacity': opacity, 'line-dasharray': [1, 1.5] } });
+          nextMap.addLayer({ id: 'route-bus', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'BUS'], paint: { 'line-color': '#1f7a4d', 'line-width': 6, 'line-opacity': opacity } });
+          nextMap.addLayer({ id: 'route-mrt', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'SUBWAY'], paint: { 'line-color': '#222', 'line-width': 7, 'line-opacity': opacity } });
+          if (selectedLeg) nextMap.addLayer({ id: 'route-selected', type: 'line', source: 'route', filter: ['==', ['get', 'index'], selectedLegIndex], paint: { 'line-color': '#D42E12', 'line-width': 9, 'line-opacity': 1 } });
           const bounds = new mapboxgl.LngLatBounds();
           const focusFeatures = selectedFeature ? [selectedFeature] : features;
           focusFeatures.forEach((feature) => feature.geometry.coordinates.forEach((coordinate) => bounds.extend(coordinate)));
           if (selectedLeg?.fromPoint) bounds.extend([selectedLeg.fromPoint.lng, selectedLeg.fromPoint.lat]);
           if (selectedLeg?.toPoint) bounds.extend([selectedLeg.toPoint.lng, selectedLeg.toPoint.lat]);
-          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 48, duration: 0 });
+          if (!bounds.isEmpty()) nextMap.fitBounds(bounds, { padding: 48, duration: 0 });
         } else if (selectedLeg?.fromPoint || selectedLeg?.toPoint) {
           const bounds = new mapboxgl.LngLatBounds();
           if (selectedLeg.fromPoint) bounds.extend([selectedLeg.fromPoint.lng, selectedLeg.fromPoint.lat]);
           if (selectedLeg.toPoint) bounds.extend([selectedLeg.toPoint.lng, selectedLeg.toPoint.lat]);
-          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 72, duration: 0 });
+          if (!bounds.isEmpty()) nextMap.fitBounds(bounds, { padding: 72, duration: 0 });
         }
-        new mapboxgl.Marker({ color: '#16181A' }).setLngLat([saved.originPoint.lng, saved.originPoint.lat]).addTo(map);
-        new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([saved.destinationPoint.lng, saved.destinationPoint.lat]).addTo(map);
+        new mapboxgl.Marker({ color: '#16181A' }).setLngLat([saved.originPoint.lng, saved.originPoint.lat]).addTo(nextMap);
+        new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([saved.destinationPoint.lng, saved.destinationPoint.lat]).addTo(nextMap);
         if (selectedLeg) {
           const from = selectedLeg.fromPoint || (selectedFeature?.geometry.coordinates[0] ? { lng: selectedFeature.geometry.coordinates[0][0], lat: selectedFeature.geometry.coordinates[0][1] } : null);
           const lastCoordinate = selectedFeature?.geometry.coordinates[selectedFeature.geometry.coordinates.length - 1];
           const to = selectedLeg.toPoint || (lastCoordinate ? { lng: lastCoordinate[0], lat: lastCoordinate[1] } : null);
-          if (from) new mapboxgl.Marker({ color: '#005EC4' }).setLngLat([from.lng, from.lat]).addTo(map);
-          if (to) new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([to.lng, to.lat]).addTo(map);
+          if (from) new mapboxgl.Marker({ color: '#005EC4' }).setLngLat([from.lng, from.lat]).addTo(nextMap);
+          if (to) new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([to.lng, to.lat]).addTo(nextMap);
         }
       });
-      map.on('error', () => { if (fallback) fallback.hidden = false; });
-    } catch { if (fallback) fallback.hidden = false; }
+      nextMap.on('error', () => { if (generation === mapGeneration && fallback) fallback.hidden = false; });
+    } catch { if (generation === mapGeneration && fallback) fallback.hidden = false; }
   }
 
   async function manualLocation() {
@@ -706,7 +764,7 @@
     if (!value) return;
     try {
       const response = await fetch(`/api/location?q=${encodeURIComponent(value)}`);
-      const data = await response.json();
+      const data = await runtime.readJson(response, 'Location lookup unavailable.');
       draftState[pickerField] = data.label || value;
       draftState[`${pickerField}Point`] = response.ok && data.point ? data.point : null;
     } catch { draftState[pickerField] = value; draftState[`${pickerField}Point`] = null; }
@@ -767,14 +825,16 @@
     if (!primary) return null; primary.alternatives = alternatives; return primary;
   }
 
-  async function liveBus(itinerary) {
+  async function liveBus(itinerary, signal) {
     const busLegs = itinerary.legs.filter((leg) => leg.mode === 'BUS');
     busLegs.forEach((leg) => { leg.live = null; leg.liveUpdatedAt = ''; leg.liveStatus = /^\d{5}$/.test(leg.stopCode) && leg.routeName ? 'loading' : 'unavailable'; });
     await Promise.all(busLegs.filter((leg) => /^\d{5}$/.test(leg.stopCode) && leg.routeName).map(async (leg) => {
       try {
-        const response = await fetch(`/api/bus-arrivals?stopCode=${leg.stopCode}&services=${encodeURIComponent(leg.routeName)}`); const data = await response.json();
-        if (response.ok) { leg.live = data.services?.[0] || null; leg.liveUpdatedAt = data.updatedAt || ''; leg.liveStatus = 'ready'; } else { leg.liveStatus = 'error'; leg.liveUpdatedAt = ''; }
-      } catch { leg.liveStatus = 'error'; leg.liveUpdatedAt = ''; }
+        const response = await fetch(`/api/bus-arrivals?stopCode=${leg.stopCode}&services=${encodeURIComponent(leg.routeName)}`, { signal });
+        const data = await runtime.readJson(response, 'LTA bus feed returned an invalid response.');
+        if (signal?.aborted) return;
+        if (response.ok && runtime.isBusArrivalsPayload(data)) { leg.live = data.services?.[0] || null; leg.liveUpdatedAt = data.updatedAt || ''; leg.liveStatus = 'ready'; } else { leg.liveStatus = 'error'; leg.liveUpdatedAt = ''; }
+      } catch (error) { if (error?.name !== 'AbortError' && !signal?.aborted) { leg.liveStatus = 'error'; leg.liveUpdatedAt = ''; } }
     }));
   }
 
@@ -828,7 +888,7 @@
     };
   }
 
-  async function liveTrain(itinerary) {
+  async function liveTrain(itinerary, signal) {
     const legs = itinerary.legs.filter((leg) => leg.mode === 'SUBWAY');
     if (!legs.length) return;
     legs.forEach((leg) => { leg.trainStatus = 'loading'; leg.trainRealtime = null; leg.liveUpdatedAt = ''; });
@@ -838,9 +898,11 @@
       const query = new URLSearchParams();
       if (routes.length) query.set('routes', routes.join(','));
       if (stops.length) query.set('stops', stops.join(','));
-      const response = await fetch(`/api/train-realtime?${query}`);
-      const payload = await response.json();
+      const response = await fetch(`/api/train-realtime?${query}`, { signal });
+      const payload = await runtime.readJson(response, 'LTA train feed returned an invalid response.');
       if (!response.ok) throw new Error(payload.error || 'LTA train feed unavailable.');
+      if (signal?.aborted) return;
+      if (!runtime.isTrainRealtimePayload(payload)) throw new Error('LTA train feed returned an invalid response.');
       itinerary.liveAlerts = relevantTrainAlerts(itinerary, payload);
       itinerary.trainFeedUpdatedAt = payload.updatedAt || '';
       legs.forEach((leg) => {
@@ -848,7 +910,8 @@
         leg.liveUpdatedAt = itinerary.trainFeedUpdatedAt;
         leg.trainStatus = 'ready';
       });
-    } catch {
+    } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted) return;
       legs.forEach((leg) => { leg.trainStatus = 'error'; leg.liveUpdatedAt = ''; });
     }
   }
@@ -857,29 +920,44 @@
     const current = routeState.data;
     const choice = alternativeOptions(current).find((option) => option.key === key);
     if (!choice || itinerarySignature(choice.itinerary) === itinerarySignature(current)) return;
+    const request = liveRequests.start();
     selectedLegIndex = null;
     liveUpdatedAt = 0;
+    liveRefreshInFlight = true;
     liveRefreshStatus = 'loading';
     const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
     routeState = { status: 'ready', data: selected, error: '' };
     render();
-    await Promise.all([liveBus(selected), liveTrain(selected)]);
-    if (routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded && hasLiveTiming(selected)) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(selected) ? 'ready' : 'idle'); render(); }
+    try {
+      await Promise.all([liveBus(selected, request.controller.signal), liveTrain(selected, request.controller.signal)]);
+      if (liveRequests.isCurrent(request) && routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded && hasLiveTiming(selected)) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(selected) ? 'ready' : 'idle'); render(); }
+    } finally {
+      if (liveRequests.isCurrent(request)) { liveRequests.finish(request); liveRefreshInFlight = false; syncLiveRefresh(); }
+    }
   }
 
   async function routeData({ preserveCurrent = false } = {}) {
     if (preserveCurrent && routeState.status === 'rerouting') return;
     const previous = preserveCurrent ? routeState.data : null;
+    const previousLiveState = snapshotLiveState(previous);
+    const request = routeRequests.start();
+    liveRequests.abort();
+    liveRefreshInFlight = false;
     const previousUpdatedAt = liveUpdatedAt;
     const previousRefreshStatus = liveRefreshStatus;
     selectedLegIndex = null;
     liveUpdatedAt = 0;
     liveRefreshStatus = 'loading';
     routeState = { status: previous ? 'rerouting' : 'loading', data: previous || null, error: '', notice: '' }; render();
-    const start = `${saved.originPoint.lat},${saved.originPoint.lng}`; const end = `${saved.destinationPoint.lat},${saved.destinationPoint.lng}`; const time = saved.departureTime ? `&time=${encodeURIComponent(saved.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(saved.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
+    const savedRoute = saved;
+    const start = `${savedRoute.originPoint.lat},${savedRoute.originPoint.lng}`; const end = `${savedRoute.destinationPoint.lat},${savedRoute.destinationPoint.lng}`; const time = savedRoute.departureTime ? `&time=${encodeURIComponent(savedRoute.departureTime)}` : ''; const timeMode = `&timeMode=${encodeURIComponent(savedRoute.timeMode === 'arrive' ? 'arrive' : 'depart')}`;
+    let liveRequest = null;
     try {
-      const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`); const data = await response.json();
+      const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`, { signal: request.controller.signal });
+      const data = await runtime.readJson(response, 'Routing unavailable.');
+      if (!routeRequests.isCurrent(request)) return;
       if (!response.ok) throw new Error(data.error || 'Routing unavailable.');
+      if (!runtime.isRoutePayload(data)) throw new Error('Routing returned an invalid itinerary.');
       const routed = normalizeRoute(data);
       if (!routed) throw new Error('No public-transport itinerary.');
       let itinerary = routed;
@@ -887,6 +965,7 @@
       if (preserveCurrent && previous) {
         const candidate = disruptionTools.bestUnblocked(routed, previous.liveAlerts || []);
         if (!candidate) {
+          restoreLiveState(previousLiveState);
           liveUpdatedAt = previousUpdatedAt;
           liveRefreshStatus = previousRefreshStatus;
           routeState = { status: 'ready', data: previous, error: '', notice: 'No unaffected alternative was returned. Your current route is still shown.' };
@@ -896,9 +975,21 @@
         itinerary = { ...candidate, alternatives: routed.alternatives, choiceLabel: 'Rerouted' };
         notice = `Rerouted via ${disruptionTools.serviceLabel(itinerary)} to avoid the affected service.`;
       }
-        routeState = { status: 'ready', data: itinerary, error: '', notice }; render(); await Promise.all([liveBus(itinerary), liveTrain(itinerary)]); if (routeState.data === itinerary) { const degraded = liveHasError(itinerary); if (!degraded && hasLiveTiming(itinerary)) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(itinerary) ? 'ready' : 'idle'); render(); }
+      routeState = { status: 'ready', data: itinerary, error: '', notice };
+      liveRequest = liveRequests.start();
+      liveRefreshInFlight = true;
+      render();
+      await Promise.all([liveBus(itinerary, liveRequest.controller.signal), liveTrain(itinerary, liveRequest.controller.signal)]);
+      if (routeRequests.isCurrent(request) && liveRequests.isCurrent(liveRequest) && routeState.data === itinerary) {
+        const degraded = liveHasError(itinerary);
+        if (!degraded && hasLiveTiming(itinerary)) liveUpdatedAt = Date.now();
+        liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(itinerary) ? 'ready' : 'idle');
+        render();
+      }
     } catch (error) {
+      if (error?.name === 'AbortError' || !routeRequests.isCurrent(request)) return;
       if (previous) {
+        restoreLiveState(previousLiveState);
         liveUpdatedAt = previousUpdatedAt;
         liveRefreshStatus = previousRefreshStatus;
         routeState = { status: 'ready', data: previous, error: '', notice: `Could not recalculate around the disruption: ${error.message || 'routing is unavailable.'} Your current route is still shown.` };
@@ -906,6 +997,13 @@
         routeState = { status: 'error', data: null, error: error.message || 'Routing unavailable.' };
       }
       render();
+    } finally {
+      if (liveRequest && liveRequests.isCurrent(liveRequest)) {
+        liveRequests.finish(liveRequest);
+        liveRefreshInFlight = false;
+        syncLiveRefresh();
+      }
+      routeRequests.finish(request);
     }
   }
 
@@ -922,10 +1020,10 @@
         else if (action === 'demo-reroute') { if (disruptionDemoStep === 'rerouting') return; disruptionDemoStep = 'rerouting'; render(); disruptionDemoTimer = window.setTimeout(() => { disruptionDemoTimer = null; if (disruptionDemoOpen) { disruptionDemoStep = 'rerouted'; render(); } }, 700); }
         else if (action === 'demo-reset') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'alert'; render(); }
         else if (action === 'demo-fallback') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'fallback'; render(); }
-        else if (action === 'bus') { stopLiveRefresh(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
-        else if (action === 'edit') { draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'bus') { cancelAsyncWork(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
+        else if (action === 'edit') { cancelAsyncWork(); draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); routeState = { status: 'idle', data: null, error: '' }; render(); } }
-        else if (action === 'clear') { stopLiveRefresh(); localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
+        else if (action === 'clear') { cancelAsyncWork(); localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
         else if (action === 'cancel') closePicker();
         else if (action === 'confirm') { draftState[pickerField] = mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label; draftState[`${pickerField}Point`] = { ...mapPosition.center }; closePicker(); }
         else if (action === 'manual') manualLocation();

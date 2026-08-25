@@ -1,6 +1,8 @@
 (()=>{
 const STORAGE_KEY='jalan-lite-presets-v1';
 const urgent='#A33A24';
+const runtime=window.JalanRuntime;
+const busRequests=runtime.createRequestCoordinator();
 const starter={id:'morning-commute',name:'Morning Commute',stopCode:'54009',stopName:'Blk 210 Ang Mo Kio Ave 3',services:['166','76','265'],days:[1,2,3,4,5],startTime:'07:15',endTime:'09:00'};
 const state={presets:loadPresets(),selectedId:null,view:'list',focusService:'',arrivals:[],updatedAt:null,loading:false,error:'',draft:null,draftService:'',location:null,nearby:[],selectedStop:null,discoverLoading:false,discoverError:'',mapLoading:false,mapController:null,confirm:null,stopAbort:null};
 let mapAssetsPromise=null;
@@ -99,9 +101,9 @@ async function mountMap(){
   }
 }
 
-async function refresh(stopOverride){const p=stopOverride||selected();if(!p)return;state.loading=true;state.error='';render();try{const services=p.services||[];const q=new URLSearchParams({stopCode:p.stopCode});if(services.length)q.set('services',services.join(','));const r=await fetch('/api/bus-arrivals?'+q);const data=await r.json();if(!r.ok)throw new Error(data.error||'Unable to load bus arrivals.');state.arrivals=data.services||[];state.updatedAt=data.updatedAt}catch(e){state.error=e.message||'Unable to load bus arrivals.'}finally{state.loading=false;render()}}
-function startEdit(p){state.draft=JSON.parse(JSON.stringify(p||selected()||starter));state.draftService='';state.view='edit';render()}
-function newPreset(){state.draft={id:'commute-'+Date.now(),name:'New commute',stopCode:'',stopName:'',services:[],days:[1,2,3,4,5],startTime:'07:30',endTime:'09:00'};state.draftService='';state.view='edit';render()}
+async function refresh(stopOverride){const p=stopOverride||selected();if(!p)return;const request=busRequests.start();state.loading=true;state.error='';render();try{const services=p.services||[];const q=new URLSearchParams({stopCode:p.stopCode});if(services.length)q.set('services',services.join(','));const r=await fetch('/api/bus-arrivals?'+q,{signal:request.controller.signal});const data=await runtime.readJson(r,'Bus arrivals returned an invalid response.');if(!busRequests.isCurrent(request))return;if(!r.ok||!runtime.isBusArrivalsPayload(data))throw new Error(data.error||'Unable to load bus arrivals.');state.arrivals=data.services;state.updatedAt=data.updatedAt}catch(e){if(e.name==='AbortError'||!busRequests.isCurrent(request))return;state.error=e.message||'Unable to load bus arrivals.'}finally{if(busRequests.isCurrent(request)){busRequests.finish(request);state.loading=false;render()}}}
+function startEdit(p){busRequests.abort();state.loading=false;state.draft=JSON.parse(JSON.stringify(p||selected()||starter));state.draftService='';state.view='edit';render()}
+function newPreset(){busRequests.abort();state.loading=false;state.draft={id:'commute-'+Date.now(),name:'New commute',stopCode:'',stopName:'',services:[],days:[1,2,3,4,5],startTime:'07:30',endTime:'09:00'};state.draftService='';state.view='edit';render()}
 function addService(){const v=state.draftService.trim();if(v&&!state.draft.services.includes(v))state.draft.services.push(v);state.draftService='';render()}
 function saveDraft(){const p=state.draft;p.name=p.name.trim()||'Commute';p.stopCode=p.stopCode.trim();p.stopName=p.stopName.trim()||('Bus stop '+p.stopCode);p.services=p.services.map(s=>s.trim()).filter(Boolean);p.days=[...p.days].sort();const i=state.presets.findIndex(x=>x.id===p.id);if(i>=0)state.presets[i]=p;else state.presets.push(p);savePresets();state.selectedId=p.id;state.view='main';state.arrivals=[];render();refresh()}
 function roundTime(date,deltaMinutes){const d=new Date(date.getTime()+deltaMinutes*60000);d.setMinutes(Math.round(d.getMinutes()/15)*15,0,0);return`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
@@ -119,8 +121,8 @@ function locate(){
     try{
       const q=new URLSearchParams({lat:state.location.lat.toFixed(4),lng:state.location.lng.toFixed(4)});
       const r=await fetch('/api/nearby-stops?'+q);
-      const data=await r.json();
-      if(!r.ok)throw new Error(data.error||'Unable to find nearby stops.');
+      const data=await runtime.readJson(r,'Nearby stops returned an invalid response.');
+      if(!r.ok||!runtime.isNearbyStopsPayload(data))throw new Error(data.error||'Unable to find nearby stops.');
       state.nearby=data.nearby||[];state.selectedStop=state.nearby[0]||null;
       if(!state.selectedStop)throw new Error('No serviced bus stops found nearby.');
       state.discoverLoading=false;state.mapLoading=true;render();loadSelectedStop();
@@ -136,8 +138,8 @@ async function loadSelectedStop(){
   try{
     const q=new URLSearchParams({stopCode});
     const r=await fetch('/api/bus-arrivals?'+q,{signal:controller.signal});
-    const data=await r.json();
-    if(!r.ok)throw new Error(data.error||'Unable to load buses for this stop.');
+    const data=await runtime.readJson(r,'Bus arrivals returned an invalid response.');
+    if(!r.ok||!runtime.isBusArrivalsPayload(data))throw new Error(data.error||'Unable to load buses for this stop.');
     if(controller.signal.aborted||state.selectedStop?.stopCode!==stopCode)return;
     state.arrivals=data.services||[];state.updatedAt=data.updatedAt;
   }catch(e){if(e.name!=='AbortError'&&state.selectedStop?.stopCode===stopCode)state.discoverError=e.message||'Unable to load buses for this stop.'}
@@ -162,7 +164,7 @@ function handleAction(el){
   else if(a==='choose-bus')makeConfirm(el.dataset.service);
   else if(a==='save-confirm')saveConfirm();
   else if(a==='adjust-confirm')adjustConfirm();
-  else if(a==='back'){cancelStopRequest();state.view=state.view==='discover'?'list':state.view==='confirm'?'discover':state.view==='focus'?'main':'list';render()}
+  else if(a==='back'){cancelStopRequest();busRequests.abort();state.loading=false;state.view=state.view==='discover'?'list':state.view==='confirm'?'discover':state.view==='focus'?'main':'list';render()}
   else if(a==='cancel'){state.view=selected()?'main':'list';render()}
   else if(a==='toggle-day'){const d=Number(el.dataset.day);const i=state.draft.days.indexOf(d);i>=0?state.draft.days.splice(i,1):state.draft.days.push(d);render()}
   else if(a==='remove-service'){state.draft.services=state.draft.services.filter(s=>s!==el.dataset.service);render()}

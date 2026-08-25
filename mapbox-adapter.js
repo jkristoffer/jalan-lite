@@ -5,8 +5,8 @@
     if(!tokenPromise){
       tokenPromise=fetch('/api/map-config')
         .then(async response=>{
-          const data=await response.json();
-          if(!response.ok||!data.token)throw new Error(data.error||'Mapbox is not configured.');
+          const data=await window.JalanRuntime.readJson(response,'Mapbox config returned an invalid response.');
+          if(!response.ok||!window.JalanRuntime.isMapConfigPayload(data))throw new Error(data.error||'Mapbox is not configured.');
           return data.token;
         });
     }

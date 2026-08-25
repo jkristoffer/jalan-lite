@@ -1,6 +1,6 @@
-const SHELL_CACHE='jalan-lite-shell-v16';
+const SHELL_CACHE='jalan-lite-shell-v17';
 const RUNTIME_CACHE='jalan-lite-runtime-v1';
-const SHELL_ASSETS=['/','/index.html','/styles.css','/route-shell.css','/app.js','/route-disruptions.js','/route-live-status.js','/route-shell.js','/pwa.js','/mapbox-overrides.css','/map-polish.css','/mapbox-adapter.js','/manifest.webmanifest','/icons/icon-192.png','/icons/icon-512.png','/icons/icon-maskable-512.png','/icons/apple-touch-icon.png'];
+const SHELL_ASSETS=['/','/index.html','/styles.css','/route-shell.css','/app.js','/route-disruptions.js','/route-live-status.js','/route-runtime.js','/route-shell.js','/pwa.js','/mapbox-overrides.css','/map-polish.css','/mapbox-adapter.js','/manifest.webmanifest','/icons/icon-192.png','/icons/icon-512.png','/icons/icon-maskable-512.png','/icons/apple-touch-icon.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(SHELL_CACHE).then(cache=>cache.addAll(SHELL_ASSETS)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>![SHELL_CACHE,RUNTIME_CACHE].includes(key)).map(key=>caches.delete(key)))).then(()=>self.clients.claim()))});
 self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{}}catch{data={body:event.data?.text()||''}}const title=data.title||'Jalan Lite';const options={body:data.body||'Your saved commute has changed.',icon:'/icons/icon-192.png',badge:'/icons/icon-192.png',tag:data.tag||'jalan-disruption',renotify:Boolean(data.renotify),data:{url:data.url||'/'}};event.waitUntil(self.registration.showNotification(title,options))});
