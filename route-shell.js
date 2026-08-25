@@ -24,6 +24,9 @@
   let disruptionDemoTimer = null;
   let notificationState = 'idle';
   let notificationMessage = '';
+  let focusMode = false;
+  let focusClockTimer = null;
+  let focusWakeLock = null;
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -199,6 +202,106 @@
     return leg.duration ? durationLabel(leg.duration) : '';
   }
 
+  function todayAt(value) {
+    const [hours, minutes] = String(value || '').split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0;
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    return date.getTime();
+  }
+
+  function focusTimes() {
+    const itinerary = routeState.data;
+    const departure = itinerary?.startTime ? toTimestamp(itinerary.startTime) : todayAt(saved?.departureTime);
+    const arrival = itinerary?.endTime
+      ? toTimestamp(itinerary.endTime)
+      : departure + ((Number(itinerary?.duration) || 0) * 1000);
+    return { departure, arrival };
+  }
+
+  function focusInfo(now = Date.now()) {
+    const itinerary = routeState.data;
+    const { departure, arrival } = focusTimes();
+    if (!departure || !arrival) return { phase: 'loading', label: 'GETTING READY', countdown: '—', context: 'Waiting for the route timetable.' };
+    if (now < departure) {
+      const first = itinerary?.legs?.[0];
+      const context = first?.mode === 'WALK' ? `Walk to ${first.toName || 'your boarding point'}` : first ? `Board ${legTitle(first)}` : 'Your saved commute';
+      return { phase: 'depart', label: 'LEAVE IN', countdown: countdownLabel(departure - now), context };
+    }
+    if (now < arrival) {
+      const active = (itinerary?.legs || []).find((leg) => {
+        const start = toTimestamp(leg.departureTime) || departure;
+        const end = toTimestamp(leg.arrivalTime) || arrival;
+        return now < end && now >= start;
+      }) || itinerary?.legs?.[itinerary.legs.length - 1];
+      const context = active?.mode === 'WALK'
+        ? `Walk to ${active.toName || 'your destination'}`
+        : active ? legTitle(active) : 'On your way';
+      return { phase: 'arrive', label: 'ARRIVE IN', countdown: countdownLabel(arrival - now), context };
+    }
+    return { phase: 'arrived', label: 'ARRIVED', countdown: '00:00', context: saved?.destination || 'Destination reached' };
+  }
+
+  function countdownLabel(milliseconds) {
+    const totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  function focusView() {
+    const info = focusInfo();
+    const freshness = liveFreshness();
+    return `<div class="focus-view"><div class="focus-topbar"><div><div class="route-kicker">Jalan · focus mode</div><div class="focus-route">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div><button class="focus-exit" data-route-action="exit-focus">Exit</button></div><main class="focus-face"><div id="focus-phase" class="focus-phase focus-phase-${escapeHtml(info.phase)}">${escapeHtml(info.label)}</div><div id="focus-countdown" class="focus-countdown" role="timer" aria-live="off" aria-label="${escapeHtml(info.label)} ${escapeHtml(info.countdown)}">${escapeHtml(info.countdown)}</div><div id="focus-context" class="focus-context">${escapeHtml(info.context)}</div></main><div class="focus-footer"><span id="focus-freshness">${escapeHtml(freshness)}</span><span>Live route data updates automatically</span></div></div>`;
+  }
+
+  function updateFocusDom() {
+    if (!focusMode) return;
+    const info = focusInfo();
+    const phase = document.getElementById('focus-phase');
+    const countdown = document.getElementById('focus-countdown');
+    const context = document.getElementById('focus-context');
+    const freshness = document.getElementById('focus-freshness');
+    if (phase) { phase.textContent = info.label; phase.className = `focus-phase focus-phase-${info.phase}`; }
+    if (countdown) { countdown.textContent = info.countdown; countdown.setAttribute('aria-label', `${info.label} ${info.countdown}`); }
+    if (context) context.textContent = info.context;
+    if (freshness) freshness.textContent = liveFreshness();
+  }
+
+  function stopFocusClock() {
+    if (focusClockTimer) window.clearInterval(focusClockTimer);
+    focusClockTimer = null;
+  }
+
+  async function requestFocusWakeLock() {
+    if (!focusMode || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    try { focusWakeLock = await navigator.wakeLock.request('screen'); } catch { focusWakeLock = null; }
+  }
+
+  async function releaseFocusWakeLock() {
+    if (!focusWakeLock) return;
+    try { await focusWakeLock.release(); } catch {}
+    focusWakeLock = null;
+  }
+
+  function enterFocusMode() {
+    if (!routeState.data) return;
+    stopLiveRefresh();
+    focusMode = true;
+    render();
+    requestFocusWakeLock();
+    focusClockTimer = window.setInterval(updateFocusDom, 1000);
+  }
+
+  function exitFocusMode() {
+    focusMode = false;
+    stopFocusClock();
+    releaseFocusWakeLock();
+    render();
+    refreshLiveTimings();
+  }
+
   function timeline(itinerary) {
     const legs = itinerary?.legs || [];
     if (!legs.length) return '<div class="timeline-empty">No step-by-step details returned.</div>';
@@ -259,7 +362,7 @@
     if (!itinerary) return '';
     const rerouting = routeState.status === 'rerouting' ? '<div class="route-rerouting" role="status">Recalculating with the latest route data…</div>' : '';
     const notice = routeState.notice ? `<div class="route-inline-notice" role="status">${escapeHtml(routeState.notice)}</div>` : '';
-    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
+    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div><button class="focus-launch-button" data-route-action="focus">Enter Focus mode</button>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
   }
 
   function modeStatusLabel(status) {
@@ -477,7 +580,7 @@
   function render() {
     destroyMap();
     shell.hidden = false;
-    shell.innerHTML = pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (viewing ? viewer() : (saved ? dashboard() : setup())));
+    shell.innerHTML = pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (focusMode ? focusView() : (viewing ? viewer() : (saved ? dashboard() : setup()))));
     bind();
     if (pickerField) requestAnimationFrame(renderPickerMap);
     if (viewing) requestAnimationFrame(renderViewerMap);
@@ -829,6 +932,8 @@
         else if (action === 'locate') locate();
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'refresh-live') refreshLiveTimings();
+        else if (action === 'focus') enterFocusMode();
+        else if (action === 'exit-focus') exitFocusMode();
         else if (action === 'notifications') enableNotifications();
         else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
         else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; viewing = true; render(); } }
@@ -843,8 +948,10 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       stopLiveRefresh();
+      releaseFocusWakeLock();
       return;
     }
+    if (focusMode) requestFocusWakeLock();
     refreshLiveTimings();
     syncLiveRefresh();
   });
