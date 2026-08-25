@@ -39,6 +39,7 @@
   let dashboardScrollUnlockTimer = null;
   let dashboardScrollAnimationFrame = null;
   let dismissedNotice = '';
+  let routinesOpen = false;
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -135,6 +136,156 @@
     return '<div class="sg-network"><span class="sg-line ns">NS</span><span class="sg-line ew">EW</span><span class="sg-line ne">NE</span><span class="sg-line cc">CC</span><span class="sg-line dt">DT</span><span class="sg-line te">TE</span></div>';
   }
 
+  function routineTime(value) {
+    return value ? timeLabel(value) : 'Flexible time';
+  }
+
+  function routineDays(days) {
+    if (!Array.isArray(days) || !days.length) return 'Any day';
+    if ([1, 2, 3, 4, 5].every((day) => days.includes(day)) && days.length === 5) return 'Mon–Fri';
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].filter((_, index) => days.includes(index)).join(' · ');
+  }
+
+  function routineRecords() {
+    return routineStorage ? routineStorage.load().routines : [];
+  }
+
+  function routineSchedule(routine) {
+    if (routine.type === 'route') {
+      const label = routine.schedule.timeMode === 'arrive' ? 'Arrive by' : 'Leave at';
+      return `${label} ${routineTime(routine.schedule.departureTime)}`;
+    }
+    const start = routineTime(routine.schedule.startTime);
+    const end = routine.schedule.endTime ? `–${routineTime(routine.schedule.endTime)}` : '';
+    return `${routineDays(routine.schedule.days)} · ${start}${end}`;
+  }
+
+  function routineItem(routine) {
+    const isRoute = routine.type === 'route';
+    const detail = isRoute
+      ? `${routine.route.origin} → ${routine.route.destination}`
+      : `${routine.bus.stopCode} · ${routine.bus.stopName}`;
+    const extra = isRoute
+      ? routineSchedule(routine)
+      : `${routine.bus.services.join(' · ')} · ${routineSchedule(routine)}`;
+    const busId = routine.legacy?.key === routineStorage?.STORAGE_KEYS.presets ? routine.legacy.id : routine.id.replace(/^bus:/, '');
+    return `<article class="routine-item ${isRoute ? 'routine-item-route' : 'routine-item-bus'}">
+      <div class="routine-item-top"><span class="routine-kind ${isRoute ? 'route' : 'bus'}">${isRoute ? 'ROUTE' : 'BUS'}</span><span class="routine-item-schedule">${escapeHtml(routineSchedule(routine))}</span></div>
+      <h2>${escapeHtml(routine.name)}</h2>
+      <p>${escapeHtml(detail)}</p>
+      <div class="routine-item-extra">${escapeHtml(extra)}</div>
+      <div class="routine-item-actions"><button type="button" class="routine-action-primary" data-route-action="open-routine" data-routine-id="${escapeHtml(isRoute ? routine.id : busId)}">${isRoute ? 'Open commute' : 'Open bus arrivals'}</button><button type="button" class="routine-action-secondary" data-route-action="edit-routine" data-routine-id="${escapeHtml(isRoute ? routine.id : busId)}">Edit</button><button type="button" class="routine-action-remove" data-route-action="remove-routine" data-routine-id="${escapeHtml(isRoute ? routine.id : busId)}" data-routine-label="${escapeHtml(routine.name)}">Remove</button></div>
+    </article>`;
+  }
+
+  function routinesView() {
+    const routines = routineRecords();
+    return `<div class="route-panel routines-mode">
+      <div class="routine-library-header"><button type="button" class="routine-back" aria-label="Back to commute" data-route-action="close-routines">‹</button><div><div class="route-kicker">DailyLoop</div><h1>Routines</h1></div></div>
+      <p class="routine-library-intro">Your saved journeys and bus checks, together in one place.</p>
+      ${routines.length ? `<div class="routine-list" aria-label="Saved routines">${routines.map(routineItem).join('')}</div>` : '<div class="routine-empty"><span class="routine-empty-mark">◎</span><h2>No routines yet</h2><p>Save a route or bus commute and it will appear here.</p><button type="button" class="route-primary" data-route-action="new-route">Plan a route</button><button type="button" class="route-link" data-route-action="bus">Open bus arrivals</button></div>'}
+    </div>`;
+  }
+
+  function routineById(id) {
+    return routineRecords().find((routine) => routine.id === id || (routine.type === 'bus' && (routine.legacy?.id === id || routine.id.replace(/^bus:/, '') === id)));
+  }
+
+  function openRoutineLibrary() {
+    stopLiveRefresh();
+    stopTemporalClock();
+    routinesOpen = true;
+    render();
+  }
+
+  function openBusView(id = '') {
+    cancelAsyncWork();
+    destroyMap();
+    shell.hidden = true;
+    launcher.hidden = false;
+    if (id && window.JalanBus?.open) window.JalanBus.open(id);
+  }
+
+  function beginRouteEdit() {
+    cancelAsyncWork();
+    dashboardPane = 'now';
+    draftState = draft(saved);
+    saved = null;
+    routeState = { status: 'idle', data: null, error: '' };
+    routinesOpen = false;
+    render();
+  }
+
+  function startNewRoute() {
+    cancelAsyncWork();
+    dashboardPane = 'now';
+    saved = null;
+    draftState = draft();
+    routeState = { status: 'idle', data: null, error: '' };
+    routinesOpen = false;
+    render();
+  }
+
+  function openRoutine(id) {
+    const routine = routineById(id);
+    routinesOpen = false;
+    if (!routine) { render(); return; }
+    if (routine.type === 'bus') {
+      const busId = routine.legacy?.id || routine.id.replace(/^bus:/, '');
+      openBusView(busId);
+      return;
+    }
+    saved = routineStorage.routeFromRoutine(routine);
+    draftState = draft(saved);
+    dashboardPane = 'now';
+    routeState = { status: 'idle', data: null, error: '' };
+    render();
+  }
+
+  function editRoutine(id) {
+    const routine = routineById(id);
+    routinesOpen = false;
+    if (!routine) { render(); return; }
+    if (routine.type === 'bus') {
+      const busId = routine.legacy?.id || routine.id.replace(/^bus:/, '');
+      openBusView(busId);
+      window.JalanBus?.edit(busId);
+      return;
+    }
+    saved = routineStorage.routeFromRoutine(routine);
+    beginRouteEdit();
+  }
+
+  function mirrorBusLegacyKey(routines) {
+    if (!routineStorage) return;
+    const presets = routines.filter((routine) => routine.type === 'bus').map(routineStorage.busPresetFromRoutine).filter(Boolean);
+    localStorage.setItem(routineStorage.STORAGE_KEYS.presets, JSON.stringify(presets));
+  }
+
+  function removeRoutine(id, label = 'this routine') {
+    const routine = routineById(id);
+    if (!routine || !routineStorage) return;
+    if (typeof window.confirm === 'function' && !window.confirm(`Remove ${label}?`)) return;
+    const loaded = routineStorage.load();
+    const next = loaded.routines.filter((value) => value.id !== routine.id);
+    routineStorage.save(next);
+    if (routine.type === 'bus') mirrorBusLegacyKey(next);
+    else {
+      const remainingRoute = next.find((value) => value.type === 'route');
+      if (remainingRoute) {
+        const legacyRoute = routineStorage.routeFromRoutine(remainingRoute);
+        if (remainingRoute.updatedAt) legacyRoute.updatedAt = remainingRoute.updatedAt;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(legacyRoute));
+      } else localStorage.removeItem(STORAGE_KEY);
+      saved = null;
+      draftState = draft();
+      routeState = { status: 'idle', data: null, error: '' };
+    }
+    window.JalanBus?.sync();
+    routinesOpen = true;
+    render();
+  }
+
   function setup() {
     const locationRow = (field, label, placeholder, node) => `<button class="route-location-row" data-route-pick="${field}">
       <span class="route-node ${node}"></span>
@@ -143,7 +294,7 @@
     </button>`;
 
     return `<div class="route-panel">
-      ${brand()}
+      <div class="route-topbar">${brand()}<button type="button" class="route-link compact" data-route-action="routines">Routines</button></div>
       <div class="route-setup-copy"><div class="route-kicker">Bus + MRT · Singapore</div><h1>Where are you going?</h1><p>Set a start and destination to see your public-transport journey.</p>${network()}</div>
       <div class="route-form">
         <div class="route-input-card">${locationRow('origin', 'From', 'Choose where you start', 'origin')}${locationRow('destination', 'To', 'Choose where you’re going', 'destination')}</div>
@@ -803,7 +954,7 @@
   }
 
   function dashboard() {
-    return '<div class="route-panel dashboard-mode"><div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Your commute</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>' + dashboardNav() + routeNotice() + dashboardAlert() + '<div id="dashboard-pager" class="dashboard-pager" aria-label="Commute content"><div class="dashboard-track"><section id="dashboard-pane-now" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-now">' + journeyHero() + '</section><section id="dashboard-pane-route" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-route">' + routeMapPanel() + card() + '</section><section id="dashboard-pane-live" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-live">' + timingCard() + notificationsCard() + routeActions() + '</section></div></div></div>';
+    return '<div class="route-panel dashboard-mode"><div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Your commute</h1></div><div class="route-header-actions"><button class="route-link compact" data-route-action="routines">Routines</button><button class="route-link compact" data-route-action="edit">Edit</button></div></div>' + dashboardNav() + routeNotice() + dashboardAlert() + '<div id="dashboard-pager" class="dashboard-pager" aria-label="Commute content"><div class="dashboard-track"><section id="dashboard-pane-now" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-now">' + journeyHero() + '</section><section id="dashboard-pane-route" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-route">' + routeMapPanel() + card() + '</section><section id="dashboard-pane-live" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-live">' + timingCard() + notificationsCard() + routeActions() + '</section></div></div></div>';
   }
 
   function demoTimeline(rerouted) {
@@ -1045,8 +1196,9 @@
   function render() {
     destroyMap();
     shell.hidden = false;
-    shell.innerHTML = pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (focusMode ? focusView() : (viewing ? viewer() : (saved ? dashboard() : setup()))));
+    shell.innerHTML = routinesOpen ? routinesView() : (pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (focusMode ? focusView() : (viewing ? viewer() : (saved ? dashboard() : setup())))));
     bind();
+    if (routinesOpen) return;
     if (pickerField) requestAnimationFrame(renderPickerMap);
     if (viewing) requestAnimationFrame(() => renderViewerMap());
     if (saved && !pickerField && !viewing && saved.originPoint && saved.destinationPoint && routeState.status === 'idle') routeData();
@@ -1500,8 +1652,14 @@
         else if (action === 'demo-reroute') { if (disruptionDemoStep === 'rerouting') return; disruptionDemoStep = 'rerouting'; render(); disruptionDemoTimer = window.setTimeout(() => { disruptionDemoTimer = null; if (disruptionDemoOpen) { disruptionDemoStep = 'rerouted'; render(); } }, 700); }
         else if (action === 'demo-reset') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'alert'; render(); }
         else if (action === 'demo-fallback') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'fallback'; render(); }
-        else if (action === 'bus') { cancelAsyncWork(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
-        else if (action === 'edit') { cancelAsyncWork(); dashboardPane = 'now'; draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'routines') openRoutineLibrary();
+        else if (action === 'close-routines') { routinesOpen = false; render(); }
+        else if (action === 'open-routine') openRoutine(button.dataset.routineId);
+        else if (action === 'edit-routine') editRoutine(button.dataset.routineId);
+        else if (action === 'remove-routine') removeRoutine(button.dataset.routineId, button.dataset.routineLabel || 'this routine');
+        else if (action === 'new-route') startNewRoute();
+        else if (action === 'bus') openBusView();
+        else if (action === 'edit') beginRouteEdit();
         else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); dashboardPane = 'now'; routeState = { status: 'idle', data: null, error: '' }; render(); } }
         else if (action === 'clear') { cancelAsyncWork(); dashboardPane = 'now'; clearSavedRoute(); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
         else if (action === 'cancel') closePicker();

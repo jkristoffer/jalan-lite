@@ -188,6 +188,26 @@ function bind(root=document){
   const ds=root.querySelector('[data-field="draftService"]');if(ds)ds.addEventListener('blur',()=>{if(state.draftService.trim())addService()});
 }
 
+window.JalanBus={
+  open(id){
+    const preset=state.presets.find(value=>value.id===id);
+    if(!preset){state.view='list';render();return}
+    state.selectedId=id;state.focusService=preset.services[0]||'';state.view='main';state.arrivals=[];render();refresh();
+  },
+  edit(id){
+    const preset=state.presets.find(value=>value.id===id);
+    if(preset)startEdit(preset);
+  },
+  sync(){
+    const selectedId=state.selectedId;
+    state.presets=loadPresets();
+    state.selectedId=state.presets.find(value=>value.id===selectedId)?.id||(state.presets.find(isActive)||state.presets[0]||{}).id||null;
+    state.view=state.presets.find(isActive)?'main':'list';
+    state.arrivals=[];render();
+    if(state.view==='main')refresh();
+  },
+};
+
 render();
 if(state.view==='main')refresh();
 })();
