@@ -18,6 +18,24 @@ node benchmarks/routing-benchmark.js \
   --json
 ```
 
+Capture complete JSON responses for every endpoint request into a versioned snapshot:
+
+```sh
+node benchmarks/routing-benchmark.js \
+  --base-url https://jalan-lite.vercel.app \
+  --date 2026-08-25 \
+  --record benchmarks/snapshots/routing-2026-08-25.json
+```
+
+Replay the same benchmark without contacting OneMap, LTA, or the deployed app:
+
+```sh
+node benchmarks/routing-benchmark.js \
+  --replay benchmarks/snapshots/routing-2026-08-25.json
+```
+
+Replay is strict: a request that is not present in the snapshot fails instead of falling back to live data. Use `--force` with `--record` only when intentionally replacing an existing snapshot. The snapshot captures complete endpoint responses and their observation metadata; it is therefore a deterministic benchmark/regression record, not a reconstruction of upstream data that was not returned by the endpoints.
+
 Each sample sends the same `requestedClock` timestamp to both endpoints. OneMap and scheduled LTA rail use that requested Singapore clock. Production LTA bus arrivals remain live-at-observation-time, so the report records `ltaObservationTime`; timing deltas from the live matrix are still coverage and confidence evidence, not historical ETA accuracy.
 
 For deterministic timing-layer checks, run the normalized BusArrival replay:

@@ -1,4 +1,5 @@
 const { SCENARIOS, DEFAULT_DEPARTURE_TIMES, endpointUrl, benchmarkAt, isClockTime } = require('./routing-scenarios');
+const routingSnapshot = require('./routing-snapshot');
 
 const DEFAULT_BASE_URL = 'https://jalan-lite.vercel.app';
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -32,6 +33,11 @@ function parseArgs(argv = process.argv.slice(2)) {
     timeoutMs: DEFAULT_TIMEOUT_MS,
     concurrency: DEFAULT_CONCURRENCY,
     json: false,
+    recordPath: null,
+    replayPath: null,
+    force: false,
+    dateExplicit: false,
+    departureTimesExplicit: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -42,17 +48,22 @@ function parseArgs(argv = process.argv.slice(2)) {
       return argv[index];
     };
     if (argument === '--base-url') options.baseUrl = next();
-    else if (argument === '--date') options.date = next();
-    else if (argument === '--times') options.departureTimes = next().split(',').map((value) => value.trim()).filter(Boolean);
-    else if (argument === '--scenarios') options.scenarioIds = next().split(',').map((value) => value.trim()).filter(Boolean);
+    else if (argument === '--date') { options.date = next(); options.dateExplicit = true; }
+    else if (argument === '--times') { options.departureTimes = next().split(',').map((value) => value.trim()).filter(Boolean); options.departureTimesExplicit = true; }
+    else if (argument === '--scenarios') { options.scenarioIds = next().split(',').map((value) => value.trim()).filter(Boolean); }
     else if (argument === '--timeout-ms') options.timeoutMs = Number(next());
     else if (argument === '--concurrency') options.concurrency = Number(next());
+    else if (argument === '--record') options.recordPath = next();
+    else if (argument === '--replay') options.replayPath = next();
+    else if (argument === '--force') options.force = true;
     else if (argument === '--json') options.json = true;
     else if (argument === '--help' || argument === '-h') options.help = true;
     else throw new Error(`Unknown argument: ${argument}`);
   }
 
   if (options.help) return options;
+  if (options.recordPath && options.replayPath) throw new Error('--record and --replay cannot be used together.');
+  if (options.force && !options.recordPath) throw new Error('--force requires --record.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(options.date)) throw new Error('Date must use YYYY-MM-DD format.');
   if (!options.departureTimes.length || options.departureTimes.some((time) => !isClockTime(time))) {
     throw new Error('Times must be a comma-separated list of HH:MM values.');
@@ -224,6 +235,8 @@ async function runBenchmark({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   concurrency = DEFAULT_CONCURRENCY,
   fetcher = fetchJson,
+  captureResponses = false,
+  source = 'live',
 } = {}) {
   const jobs = scenarios.flatMap((scenario) => departureTimes.map((departureTime) => ({ scenario, departureTime })));
   const samples = await mapLimit(jobs, concurrency, async ({ scenario, departureTime }) => {
@@ -236,7 +249,7 @@ async function runBenchmark({
     ]);
     const lta = summarizeLta(ltaResponse);
     const oneMap = summarizeOneMap(oneMapResponse);
-    return {
+    const sample = {
       scenarioId: scenario.id,
       scenarioLabel: scenario.label,
       departureTime,
@@ -246,9 +259,15 @@ async function runBenchmark({
       oneMap,
       comparison: compareSample(oneMap, lta),
     };
+    if (captureResponses) {
+      sample.requests = { lta: ltaUrl, onemap: oneMapUrl };
+      sample.responses = { lta: ltaResponse, onemap: oneMapResponse };
+    }
+    return sample;
   });
   return {
     generatedAt: new Date().toISOString(),
+    source,
     baseUrl: String(baseUrl).replace(/\/$/, ''),
     requestedDate: date,
     departureTimes: [...departureTimes],
@@ -267,6 +286,7 @@ function formatRate(value) {
 function formatReport(report) {
   const lines = [
     `Routing benchmark: ${report.baseUrl}`,
+    `Data source: ${report.source || 'live'}`,
     `Requested date: ${report.requestedDate}; samples: ${report.summary.sampleCount}`,
     '',
   ];
@@ -298,6 +318,9 @@ function helpText() {
     '  --scenarios ID,ID      Limit the fixed scenario set',
     '  --timeout-ms N         Request timeout (default: 30000)',
     '  --concurrency N        Concurrent samples (default: 2)',
+    '  --record FILE          Capture complete endpoint responses to a snapshot',
+    '  --replay FILE          Run without network using a recorded snapshot',
+    '  --force                Replace an existing --record snapshot',
     '  --json                 Emit machine-readable JSON',
   ].join('\n');
 }
@@ -308,12 +331,33 @@ async function main(argv = process.argv.slice(2)) {
     console.log(helpText());
     return;
   }
-  const scenarios = options.scenarioIds
-    ? SCENARIOS.filter((scenario) => options.scenarioIds.includes(scenario.id))
+  const snapshot = options.replayPath ? routingSnapshot.readSnapshot(options.replayPath) : null;
+  const scenarioIds = options.scenarioIds || (snapshot?.scenarioIds?.length ? snapshot.scenarioIds : null);
+  const scenarios = scenarioIds
+    ? SCENARIOS.filter((scenario) => scenarioIds.includes(scenario.id))
     : SCENARIOS;
   if (!scenarios.length) throw new Error('No matching scenarios.');
-  const report = await runBenchmark({ ...options, scenarios });
-  console.log(options.json ? JSON.stringify(report, null, 2) : formatReport(report));
+
+  const report = await runBenchmark({
+    ...options,
+    baseUrl: snapshot?.sourceBaseUrl || options.baseUrl,
+    date: snapshot && !options.dateExplicit ? snapshot.requestedDate : options.date,
+    departureTimes: snapshot && !options.departureTimesExplicit ? snapshot.departureTimes : options.departureTimes,
+    scenarios,
+    fetcher: snapshot ? routingSnapshot.createSnapshotFetcher(snapshot) : fetchJson,
+    captureResponses: Boolean(options.recordPath),
+    source: snapshot ? 'recorded-snapshot' : 'live',
+  });
+  let snapshotPath = null;
+  if (options.recordPath) {
+    snapshotPath = routingSnapshot.writeSnapshot(options.recordPath, routingSnapshot.createSnapshot(report), { overwrite: options.force });
+  }
+  if (options.json) {
+    console.log(JSON.stringify(snapshotPath ? { ...report, snapshotPath } : report, null, 2));
+  } else {
+    console.log(formatReport(report));
+    if (snapshotPath) console.log(`Recorded snapshot: ${snapshotPath}`);
+  }
 }
 
 if (require.main === module) {
@@ -335,4 +379,6 @@ module.exports = {
   aggregateBenchmark,
   formatReport,
   runBenchmark,
+  createSnapshot: routingSnapshot.createSnapshot,
+  createSnapshotFetcher: routingSnapshot.createSnapshotFetcher,
 };

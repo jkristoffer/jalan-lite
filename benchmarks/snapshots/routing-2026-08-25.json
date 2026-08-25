@@ -1,0 +1,1218 @@
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíß|Ó½÷ã®vo+^²‰¢¶×{
+  "kind": "jalan-routing-benchmark-snapshot",
+  "version": 1,
+  "capturedAt": "2026-08-25T09:36:41.062Z",
+  "sourceBaseUrl": "https://jalan-lite.vercel.app",
+  "requestedDate": "2026-08-25",
+  "departureTimes": [
+    "08:00",
+    "18:00"
+  ],
+  "scenarioIds": [
+    "rivervale-tai-seng",
+    "buangkok-tai-seng",
+    "loyang-city-hall",
+    "city-hall-loyang"
+  ],
+  "timingNote": "Both endpoints receive the same requestedClock timestamp. OneMap and scheduled LTA rail use that clock; live LTA BusArrival remains observation-time data unless a replay provider is used.",
+  "samples": [
+    {
+      "scenarioId": "rivervale-tai-seng",
+      "scenarioLabel": "Rivervale Walk â†’ Tai Seng MRT",
+      "departureTime": "08:00",
+      "requestedAt": "2026-08-25T08:00:00+08:00",
+      "requests": {
+        "lta": "https://jalan-lite.vercel.app/api/multimodal-route?start=1.383486079111297%2C103.9007824399956&end=1.335141501392029%2C103.8883893001908&requestedClock=2026-08-25T08%3A00%3A00%2B08%3A00",
+        "onemap": "https://jalan-lite.vercel.app/api/route?start=1.383486079111297%2C103.9007824399956&end=1.335141501392029%2C103.8883893001908&requestedClock=2026-08-25T08%3A00%3A00%2B08%3A00&time=08%3A00&timeMode=depart"
+      },
+      "responses": {
+        "lta": {
+          "status": 200,
+          "body": {
+            "engine": "lta-realtime-multimodal-v3",
+            "scope": "live-bus-plus-scheduled-rail",
+            "bus": {
+              "engine": "lta-realtime-bus-v2",
+              "scope": "bus-up-to-one-transfer",
+              "candidates": [
+                {
+                  "kind": "direct",
+                  "transfers": 0,
+                  "serviceNo": "80",
+                  "operator": "SBST",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70289",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Aft Tai Seng Stn Exit C",
+                    "lat": 1.335054333,
+                    "lng": 103.8885833,
+                    "distanceMetres": 24
+                  },
+                  "rideStops": 21,
+                  "routeDistanceKm": 7.8,
+                  "totalWalkMetres": 151,
+                  "legs": [
+                    {
+                      "serviceNo": "80",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "70289",
+                      "rideStops": 21,
+                      "routeDistanceKm": 7.8,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1417
+                        },
+                        "saturday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1418
+                        },
+                        "sunday": {
+                          "firstMinutes": 320,
+                          "lastMinutes": 1416
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        15,
+                        29,
+                        44
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 15,
+                      "serviceSchedule": {
+                        "serviceNo": "80",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "67759",
+                        "destinationCode": "14009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 15,
+                            "raw": "10-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 18,
+                            "raw": "09-18"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 16,
+                            "raw": "13-16"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 18,
+                            "maxMinutes": 20,
+                            "raw": "18-20"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "liveStatus": "ready",
+                  "arrivals": [
+                    15,
+                    29,
+                    44
+                  ],
+                  "monitored": [
+                    false,
+                    false,
+                    false
+                  ],
+                  "catchableArrivalMinutes": 15
+                },
+                {
+                  "kind": "direct",
+                  "transfers": 0,
+                  "serviceNo": "80",
+                  "operator": "SBST",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70299",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Opp Asiawide Ind Bldg",
+                    "lat": 1.3374750000156,
+                    "lng": 103.88758305557131,
+                    "distanceMetres": 275
+                  },
+                  "rideStops": 20,
+                  "routeDistanceKm": 7.5,
+                  "totalWalkMetres": 402,
+                  "legs": [
+                    {
+                      "serviceNo": "80",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "70299",
+                      "rideStops": 20,
+                      "routeDistanceKm": 7.5,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1417
+                        },
+                        "saturday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1418
+                        },
+                        "sunday": {
+                          "firstMinutes": 320,
+                          "lastMinutes": 1416
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        15,
+                        29,
+                        44
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 15,
+                      "serviceSchedule": {
+                        "serviceNo": "80",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "67759",
+                        "destinationCode": "14009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 15,
+                            "raw": "10-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 18,
+                            "raw": "09-18"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 16,
+                            "raw": "13-16"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 18,
+                            "maxMinutes": 20,
+                            "raw": "18-20"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "liveStatus": "ready",
+                  "arrivals": [
+                    15,
+                    29,
+                    44
+                  ],
+                  "monitored": [
+                    false,
+                    false,
+                    false
+                  ],
+                  "catchableArrivalMinutes": 15
+                },
+                {
+                  "kind": "transfer",
+                  "transfers": 1,
+                  "serviceNo": "82",
+                  "secondServiceNo": "80",
+                  "operator": "GAS",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70289",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Aft Tai Seng Stn Exit C",
+                    "lat": 1.335054333,
+                    "lng": 103.8885833,
+                    "distanceMetres": 24
+                  },
+                  "transfer": {
+                    "stopCode": "63059"
+                  },
+                  "rideStops": 20,
+                  "routeDistanceKm": 7.6,
+                  "totalWalkMetres": 151,
+                  "legs": [
+                    {
+                      "serviceNo": "82",
+                      "operator": "GAS",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "63059",
+                      "rideStops": 8,
+                      "routeDistanceKm": 3.3,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 329,
+                          "lastMinutes": 43
+                        },
+                        "saturday": {
+                          "firstMinutes": 325,
+                          "lastMinutes": 40
+                        },
+                        "sunday": {
+                          "firstMinutes": 325,
+                          "lastMinutes": 41
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        11,
+                        26,
+                        41
+                      ],
+                      "monitored": [
+                        true,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 11,
+                      "serviceSchedule": {
+                        "serviceNo": "82",
+                        "operator": "GAS",
+                        "direction": 1,
+                        "originCode": "65009",
+                        "destinationCode": "65009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 15,
+                            "raw": "15-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 16,
+                            "raw": "15-16"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 15,
+                            "raw": "15-15"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 18,
+                            "raw": "15-18"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "serviceNo": "80",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "63059",
+                      "alightStopCode": "70289",
+                      "rideStops": 12,
+                      "routeDistanceKm": 4.3,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 338,
+                          "lastMinutes": 1436
+                        },
+                        "saturday": {
+                          "firstMinutes": 338,
+                          "lastMinutes": 1438
+                        },
+                        "sunday": {
+                          "firstMinutes": 339,
+                          "lastMinutes": 1436
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        7,
+                        34,
+                        null
+                      ],
+                      "monitored": [
+                        true,
+                        false,
+                        false
+                      ],
+                      "serviceSchedule": {
+                        "serviceNo": "80",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "67759",
+                        "destinationCode": "14009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 15,
+                            "raw": "10-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 18,
+                            "raw": "09-18"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 16,
+                            "raw": "13-16"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 18,
+                            "maxMinutes": 20,
+                            "raw": "18-20"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "liveStatus": "ready",
+                  "arrivals": [
+                    11,
+                    26,
+                    41
+                  ],
+                  "monitored": [
+                    true,
+                    false,
+                    false
+                  ],
+                  "catchableArrivalMinutes": 11,
+                  "secondLiveStatus": "ready",
+                  "secondArrivals": [
+                    7,
+                    34,
+                    null
+                  ],
+                  "secondMonitored": [
+                    true,
+                    false,
+                    false
+                  ]
+                },
+                {
+                  "kind": "transfer",
+                  "transfers": 1,
+                  "serviceNo": "80",
+                  "secondServiceNo": "158",
+                  "operator": "SBST",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70289",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Aft Tai Seng Stn Exit C",
+                    "lat": 1.335054333,
+                    "lng": 103.8885833,
+                    "distanceMetres": 24
+                  },
+                  "transfer": {
+                    "stopCode": "70309"
+                  },
+                  "rideStops": 21,
+                  "routeDistanceKm": 7.8,
+                  "totalWalkMetres": 151,
+                  "legs": [
+                    {
+                      "serviceNo": "80",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "70309",
+                      "rideStops": 19,
+                      "routeDistanceKm": 7.3,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1417
+                        },
+                        "saturday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1418
+                        },
+                        "sunday": {
+                          "firstMinutes": 320,
+                          "lastMinutes": 1416
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        15,
+                        29,
+                        44
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 15,
+                      "serviceSchedule": {
+                        "serviceNo": "80",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "67759",
+                        "destinationCode": "14009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 15,
+                            "raw": "10-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 18,
+                            "raw": "09-18"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 16,
+                            "raw": "13-16"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 18,
+                            "maxMinutes": 20,
+                            "raw": "18-20"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "serviceNo": "158",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "70309",
+                      "alightStopCode": "70289",
+                      "rideStops": 2,
+                      "routeDistanceKm": 0.5,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 355,
+                          "lastMinutes": 1420
+                        },
+                        "saturday": {
+                          "firstMinutes": 354,
+                          "lastMinutes": 1419
+                        },
+                        "sunday": {
+                          "firstMinutes": 369,
+                          "lastMinutes": 1419
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        10,
+                        22,
+                        39
+                      ],
+                      "monitored": [
+                        true,
+                        false,
+                        false
+                      ],
+                      "serviceSchedule": {
+                        "serviceNo": "158",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "66009",
+                        "destinationCode": "66009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 11,
+                            "maxMinutes": 15,
+                            "raw": "11-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 12,
+                            "maxMinutes": 17,
+                            "raw": "12-17"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 15,
+                            "raw": "13-15"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 17,
+                            "maxMinutes": 24,
+                            "raw": "17-24"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "liveStatus": "ready",
+                  "arrivals": [
+                    15,
+                    29,
+                    44
+                  ],
+                  "monitored": [
+                    false,
+                    false,
+                    false
+                  ],
+                  "catchableArrivalMinutes": 15,
+                  "secondLiveStatus": "ready",
+                  "secondArrivals": [
+                    10,
+                    22,
+                    39
+                  ],
+                  "secondMonitored": [
+                    true,
+                    false,
+                    false
+                  ]
+                },
+                {
+                  "kind": "transfer",
+                  "transfers": 1,
+                  "serviceNo": "82",
+                  "secondServiceNo": "80A",
+                  "operator": "GAS",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70289",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Aft Tai Seng Stn Exit C",
+                    "lat": 1.335054333,
+                    "lng": 103.8885833,
+                    "distanceMetres": 24
+                  },
+                  "transfer": {
+                    "stopCode": "63059"
+                  },
+                  "rideStops": 20,
+                  "routeDistanceKm": 7.6,
+                  "totalWalkMetres": 151,
+                  "legs": [
+                    {
+                      "serviceNo": "82",
+                      "operator": "GAS",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "63059",
+                      "rideStops": 8,
+                      "routeDistanceKm": 3.3,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 329,
+                          "lastMinutes": 43
+                        },
+                        "saturday": {
+                          "firstMinutes": 325,
+                          "lastMinutes": 40
+                        },
+                        "sunday": {
+                          "firstMinutes": 325,
+                          "lastMinutes": 41
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        11,
+                        26,
+                        41
+                      ],
+                      "monitored": [
+                        true,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 11,
+                      "serviceSchedule": {
+                        "serviceNo": "82",
+                        "operator": "GAS",
+                        "direction": 1,
+                        "originCode": "65009",
+                        "destinationCode": "65009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 15,
+                            "raw": "15-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 16,
+                            "raw": "15-16"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 15,
+                            "raw": "15-15"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 15,
+                            "maxMinutes": 18,
+                            "raw": "15-18"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "serviceNo": "80A",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "63059",
+                      "alightStopCode": "70289",
+                      "rideStops": 12,
+                      "routeDistanceKm": 4.3,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 380,
+                          "lastMinutes": 596
+                        },
+                        "saturday": null,
+                        "sunday": null
+                      },
+                      "liveStatus": "unavailable",
+                      "arrivals": [
+                        null,
+                        null,
+                        null
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "serviceSchedule": {
+                        "serviceNo": "80A",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "67759",
+                        "destinationCode": "81089",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 14,
+                            "maxMinutes": 24,
+                            "raw": "14-24"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 17,
+                            "maxMinutes": 26,
+                            "raw": "17-26"
+                          },
+                          "pmPeak": null,
+                          "pmOffpeak": null
+                        }
+                      }
+                    }
+                  ],
+                  "liveStatus": "ready",
+                  "arrivals": [
+                    11,
+                    26,
+                    41
+                  ],
+                  "monitored": [
+                    true,
+                    false,
+                    false
+                  ],
+                  "catchableArrivalMinutes": 11,
+                  "secondLiveStatus": "unavailable",
+                  "secondArrivals": [
+                    null,
+                    null,
+                    null
+                  ],
+                  "secondMonitored": [
+                    false,
+                    false,
+                    false
+                  ]
+                },
+                {
+                  "kind": "transfer",
+                  "transfers": 1,
+                  "serviceNo": "80",
+                  "secondServiceNo": "22",
+                  "operator": "SBST",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70289",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Aft Tai Seng Stn Exit C",
+                    "lat": 1.335054333,
+                    "lng": 103.8885833,
+                    "distanceMetres": 24
+                  },
+                  "transfer": {
+                    "stopCode": "62059"
+                  },
+                  "rideStops": 21,
+                  "routeDistanceKm": 7.8,
+                  "totalWalkMetres": 151,
+                  "legs": [
+                    {
+                      "serviceNo": "80",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "62059",
+                      "rideStops": 14,
+                      "routeDistanceKm": 5.8,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1417
+                        },
+                        "saturday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1418
+                        },
+                        "sunday": {
+                          "firstMinutes": 320,
+                          "lastMinutes": 1416
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        15,
+                        29,
+                        44
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 15,
+                      "serviceSchedule": {
+                        "serviceNo": "80",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "67759",
+                        "destinationCode": "14009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 15,
+                            "raw": "10-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 18,
+                            "raw": "09-18"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 16,
+                            "raw": "13-16"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 18,
+                            "maxMinutes": 20,
+                            "raw": "18-20"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "serviceNo": "22",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "62059",
+                      "alightStopCode": "70289",
+                      "rideStops": 7,
+                      "routeDistanceKm": 2,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 350,
+                          "lastMinutes": 1430
+                        },
+                        "saturday": {
+                          "firstMinutes": 349,
+                          "lastMinutes": 1430
+                        },
+                        "sunday": {
+                          "firstMinutes": 363,
+                          "lastMinutes": 1430
+                        }
+                      },
+                      "liveStatus": "unchecked",
+                      "arrivals": [
+                        null,
+                        null,
+                        null
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "serviceSchedule": {
+                        "serviceNo": "22",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "54009",
+                        "destinationCode": "82009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 11,
+                            "raw": "09-11"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 16,
+                            "raw": "10-16"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 10,
+                            "raw": "10-10"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 22,
+                            "raw": "10-22"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "liveStatus": "ready",
+                  "arrivals": [
+                    15,
+                    29,
+                    44
+                  ],
+                  "monitored": [
+                    false,
+                    false,
+                    false
+                  ],
+                  "catchableArrivalMinutes": 15,
+                  "secondLiveStatus": "unchecked",
+                  "secondArrivals": [
+                    null,
+                    null,
+                    null
+                  ],
+                  "secondMonitored": [
+                    false,
+                    false,
+                    false
+                  ]
+                },
+                {
+                  "kind": "transfer",
+                  "transfers": 1,
+                  "serviceNo": "80",
+                  "secondServiceNo": "24",
+                  "operator": "SBST",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70289",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Aft Tai Seng Stn Exit C",
+                    "lat": 1.335054333,
+                    "lng": 103.8885833,
+                    "distanceMetres": 24
+                  },
+                  "transfer": {
+                    "stopCode": "62059"
+                  },
+                  "rideStops": 21,
+                  "routeDistanceKm": 7.8,
+                  "totalWalkMetres": 151,
+                  "legs": [
+                    {
+                      "serviceNo": "80",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "62059",
+                      "rideStops": 14,
+                      "routeDistanceKm": 5.8,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1417
+                        },
+                        "saturday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1418
+                        },
+                        "sunday": {
+                          "firstMinutes": 320,
+                          "lastMinutes": 1416
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        15,
+                        29,
+                        44
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 15,
+                      "serviceSchedule": {
+                        "serviceNo": "80",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "67759",
+                        "destinationCode": "14009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 15,
+                            "raw": "10-15"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 18,
+                            "raw": "09-18"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 16,
+                            "raw": "13-16"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 18,
+                            "maxMinutes": 20,
+                            "raw": "18-20"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "serviceNo": "24",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "62059",
+                      "alightStopCode": "70289",
+                      "rideStops": 7,
+                      "routeDistanceKm": 2,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 330,
+                          "lastMinutes": 1397
+                        },
+                        "saturday": {
+                          "firstMinutes": 330,
+                          "lastMinutes": 1396
+                        },
+                        "sunday": {
+                          "firstMinutes": 330,
+                          "lastMinutes": 1396
+                        }
+                      },
+                      "liveStatus": "unchecked",
+                      "arrivals": [
+                        null,
+                        null,
+                        null
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "serviceSchedule": {
+                        "serviceNo": "24",
+                        "operator": "SBST",
+                        "direction": 1,
+                        "originCode": "54009",
+                        "destinationCode": "54009",
+                        "category": "TRUNK",
+                        "frequencies": {
+                          "amPeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 10,
+                            "raw": "9-10"
+                          },
+                          "amOffpeak": {
+                            "minMinutes": 9,
+                            "maxMinutes": 13,
+                            "raw": "09-13"
+                          },
+                          "pmPeak": {
+                            "minMinutes": 10,
+                            "maxMinutes": 14,
+                            "raw": "10-14"
+                          },
+                          "pmOffpeak": {
+                            "minMinutes": 13,
+                            "maxMinutes": 14,
+                            "raw": "13-14"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "liveStatus": "ready",
+                  "arrivals": [
+                    15,
+                    29,
+                    44
+                  ],
+                  "monitored": [
+                    false,
+                    false,
+                    false
+                  ],
+                  "catchableArrivalMinutes": 15,
+                  "secondLiveStatus": "unchecked",
+                  "secondArrivals": [
+                    null,
+                    null,
+                    null
+                  ],
+                  "secondMonitored": [
+                    false,
+                    false,
+                    false
+                  ]
+                },
+                {
+                  "kind": "transfer",
+                  "transfers": 1,
+                  "serviceNo": "80",
+                  "secondServiceNo": "28",
+                  "operator": "SBST",
+                  "direction": 1,
+                  "board": {
+                    "stopCode": "65029",
+                    "roadName": "Punggol Rd",
+                    "name": "Blk 111",
+                    "lat": 1.38461500003195,
+                    "lng": 103.90061583298267,
+                    "distanceMetres": 127
+                  },
+                  "alight": {
+                    "stopCode": "70289",
+                    "roadName": "Upp Paya Lebar Rd",
+                    "name": "Aft Tai Seng Stn Exit C",
+                    "lat": 1.335054333,
+                    "lng": 103.8885833,
+                    "distanceMetres": 24
+                  },
+                  "transfer": {
+                    "stopCode": "70309"
+                  },
+                  "rideStops": 21,
+                  "routeDistanceKm": 7.8,
+                  "totalWalkMetres": 151,
+                  "legs": [
+                    {
+                      "serviceNo": "80",
+                      "operator": "SBST",
+                      "direction": 1,
+                      "boardStopCode": "65029",
+                      "alightStopCode": "70309",
+                      "rideStops": 19,
+                      "routeDistanceKm": 7.3,
+                      "operatingWindow": {
+                        "weekday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1417
+                        },
+                        "saturday": {
+                          "firstMinutes": 322,
+                          "lastMinutes": 1418
+                        },
+                        "sunday": {
+                          "firstMinutes": 320,
+                          "lastMinutes": 1416
+                        }
+                      },
+                      "liveStatus": "ready",
+                      "arrivals": [
+                        15,
+                        29,
+                        44
+                      ],
+                      "monitored": [
+                        false,
+                        false,
+                        false
+                      ],
+                      "catchableArrivalMinutes": 15,
+                      "serviceScheduleÛ}µçkh‘éì¶»§q«^t€‰ÍÑ½Á%¹‘•àˆè€Èà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Èä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰Q9 5I 5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Ğˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Ğˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞØÌààÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÈÜÈÀÈÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌĞØÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌĞäÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Èä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÌÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰M%5$5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Ìˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Ìˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÌÌÜÄÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÌÈÀÌĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌØàäÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌÜÄäÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÌÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÌÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰Q5A%9L5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Èˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Èˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞÔÄØÄÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÔÌÈààÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌàÌÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌàØÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÌÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÌÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰õ½í•ÙéáHı	eA]1M1E)e9=)E!M!===5E5	-	-	M	Mm	%m4ı]<ı}=U=•-…-…=MeE}]­…İ½ÅÕõå¥ÅõÍ üı…9õ-m]e]e]ee•]e]eÅ%µ-¥]e]eÍ!%=Lüı•¥Í]m]e5EEe-55%=%======E==%=Íİ	­5¥•=EE=E%==E==E=%=%5%==%=%5%•Åüı]•İ¥5%=%5%==%=%=<üı¥½%=5%==%==%5%=%=5%=%5%=%55%55¥…-%5%=%5%=%5-%========E=E=EEDüı=EEEE<ı=…Í)EE<üıEE%=E%E=%EDüıEEDüı=]µLüı]­EE<üıEDı%EDı%EDı%=DüıEEDüıõÕ•<ıEEE=E5Dı%MõüıU]½EE<ıEDıDı4ıEDıı5Dı5ıEEE=EEEEEEEEE<üıEDı%ÍYEDı==EEE5E,ı=EEDı5E5EEE,ıMÍ• üıU¥EEıEEDıEDıEDıDıDıDıDıDıEDıEEDıEEı-EE-ÍEEEDıı5DıDıDıDıEDıEEEE-=EEE,ıµ½)EE5=EE=-E=-=E%=EE=DüıEE<ı=m­üüüı•Å<ı=EEEE=EEEEEEEEDıEEÕ ıE}•	­Y•	 ıEE ıDıE…EEE=%…-…­õ]=-=-=-=-…åE5E=E=E=EE=EEE=EEE=EEE=E,ıE,ı¥1E%EEEE=EDı=<ı5EDı5EEEE%=E-MÅüüıe­EDı5EEDıE<ııEDı<ııE<ııEDıEDıEEEDıEEE=-Dı-µİ¡E%E=EEEEE=EEE=EEE=EE=E5E%İ	E=%=E==E=%E-íÕE%=E=%E%­Õüı%måõE=E=E=E=E-Í…=E=E=-E==%===%==%¥õ	%5=%==%=%5%%5-5%=%5­å%5-5%5%=-%=%5%=%=%==%5-E}%==%5=%=%5%=%5%5-5-5-5-5-5---55---5-5-5%5-5%=%5%=%5%%-5-==%====E==E=E=E=EEE=EEEEEEEEEEEDıEDıDıEDıEDıDıEDıEEEEEE	=ıE	EE	E	-=	ÁE	E	E	E	==	ıE	E=E=E==E=======!=!5=!5!=!5)ı-!=)5!5)5)5 ı5!5)5 ıíÁ%üı­Á	5)5!5!5)	5!=!	5!=!	5!5)ı-!5)5)ı-!Õ‰5!5)-!-)%	5)-)%	5)-1%5!5)-!-)5)ı-!Õ‘5(üıí	‰	5)5)5!=)-!ı5!=)5!=5!==!==E==E==EE=	EE	EüıE	=ı=	EEDıEDıDıLıDıEEEE=E-EE=EE=%Uí=Eı5E=EE==E=E=E===E==E=======%===%==5%==$üı==%5ıåõ==%=%=%===%=====%===E===E==E=E=E=E=EE=E=5EE=-½)…	=E-E5ı=E5EE5ıE=ı-EEı-… ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€ÄÀĞÈ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèmt°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•M¡½ÉÑ9…µ”ˆè€‰\ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•1½¹9…µ”ˆè€‰MP]MP1%9ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ÄÜÜä(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔĞÀÔĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔĞÈÄØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€Äàä¸ÀÜ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€ÄÈÌÜ°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰]1,ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰AM%HI%L5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Äˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Äˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞäÈàÌà°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÜÌÀÌĞĞ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÀÔĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÀÔĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰AM%HI%L%9Pˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜÜÀÀäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜÜÀÀäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞàĞÔ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÜÌØäØÄ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÈÄØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞĞÌØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰µ‘­}ÉµåHüı!Y•}5¹	ù	ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€Ü(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€Äàä¸ÀÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰É•±…Ñ¥Ù•¥É•Ñ¥½¸ˆè€‰AIPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑÉ••Ñ9…µ”ˆè€‰Á…Ñ ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…‰Í½±ÕÑ•¥É•Ñ¥½¸ˆè€‰]MPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…å=¸ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…É•„ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‰½ÕÍ9…µ”ˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞäÈàÌà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÜÌÀÌĞĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰•±•Ù…Ñ¥½¸ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰É•¹Ñ•‘	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ÄØÈ(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔĞĞÌØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÔÌàÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÌÈÔÄ¸ÈÌ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€ÄÜÜà°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰	ULˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€ˆÌÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹å9…µ”ˆè€‰¼µ¡•…M¥¹…Á½É”ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åUÉ°ˆè€‰¡ÑÑÀè¼½İİÜ¹¼µ…¡•…‘Í¥¹…Á½É”¹½´¼ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•QåÁ”ˆè€Ì°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•%ˆè€ˆÌÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹å%ˆè€ˆÄéLˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ¥Á%ˆè€ˆÌÔä´È´ÌÀÄĞˆ°(€€€€€€€€€€€€€€€€€€€€€€‰Í•ÉÙ¥•…Ñ”ˆè€ˆÈÀÈØ´Àà´ÈÔˆ°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰AM%HI%L%9Pˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜÜÀÀäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜÜÀÀäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞàĞÔ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÜÌØäØÄ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÈÄØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞĞÌØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€À°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ä°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰1=e9AP½=A@	1,€ÈÔØˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÄÄäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÄÄäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØĞÌÈàØ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÄàäÜ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÌàÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÌàÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÄÈ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÄÌ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•Éµ•‘¥…Ñ•MÑ½ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰=A@AM%HI%LMQ8a%Pˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜÜÄÜäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜÜÄÜäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÀàÄÈØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÜÈÔĞÌÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÔÌÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÔØÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€È°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1,€ÔØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜÜÌĞäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜÜÌĞäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞàÜĞÈĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÜÀÀÀÜà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞØÈĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞØÔĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€È°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1,€ÔØĞˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜÜÌÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜÜÌÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÀÀÄàØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØàÀàà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞØäàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÜÈàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ğ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰=A@	1,€ÔÔÔˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜÜÌØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜÜÌØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÄØØĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØàÌØØÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÜÜÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞàÀÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ğ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1,€ĞÈÔˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜÜÀÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜÜÀÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÔÀØÌĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØäÌØÄĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞàÔàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞàààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ô°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ø°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1,€ÄÀàˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜàÄÜÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜàÄÜÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔØÜÌàÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞäÌÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞäØÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ø°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ü°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰		1,€ÄàÜˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜàÄàÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜàÄàÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔäÀÔà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØĞÜØÄĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÀÌĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÀØĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ü°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€à°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰P	1,€ÄàÈˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèÜàÄäÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆÜàÄäÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÄÜØäÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØĞààäĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÄÈÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÄÔÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€à°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1,€ÈØåˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÀääˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÀääˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÌÈàÌØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØĞÔÜÄÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÄàÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÈÄÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÄÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1,€ÈÜÔˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÀÈÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÀÈÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÔÌÜØà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØĞÜÌÜÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÈÔÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÈàÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÄÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÄÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰1=e9APˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÄÀÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÄÀÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÔÌÔÀà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÀÔÜà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÌÈØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÌÔØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÄÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÄÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰Å¡­å±µåI‘İ4üıé9ñ,üıù)õüıİ¥$üıPüıÙ!µ$üıùE½4üı]õ<üıñ½ üı}…0üı½5üım±ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€ÈĞ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèmt°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•M¡½ÉÑ9…µ”ˆè€ˆÌÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•1½¹9…µ”ˆè€‰L	UL€ÌÔäˆ°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€äĞä(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔÔÌàÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÔĞĞÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ĞĞ¸àĞ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€ÌÀÜ°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰]1,ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰1=e9AP½=A@	1,€ÈÔØˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÄÄäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÄÄäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØĞÌÈàØ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÄàäÜ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÌàÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÌàÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰•ÍÑ¥¹…Ñ¥½¸ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØĞØÄÜà°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÀÀÀÔ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔĞĞÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰9=I50ˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰í}©}ÁÁåHüı	 ı	0ıIM%ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€ä(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ĞĞ¸àĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰É•±…Ñ¥Ù•¥É•Ñ¥½¸ˆè€‰AIPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑÉ••Ñ9…µ”ˆè€‰Á…Ñ ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…‰Í½±ÕÑ•¥É•Ñ¥½¸ˆè€‰M=UQ!MPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…å=¸ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…É•„ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‰½ÕÍ9…µ”ˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØĞÌÈàØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÄàäÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰•±•Ù…Ñ¥½¸ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰É•¹Ñ•‘	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ÔÜ(€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€‰Ñ½½M±½Á•ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù•‘Ñ•ÍÑ¥¹…Ñ¥½¹]¥Ñ¡I•¹Ñ•‘	¥å±”ˆè™…±Í”(€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ÌÄàÈ°(€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔÈÀÜäÀÀÀ°(€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÔÈØÄÀÀÀ°(€€€€€€€€€€€€€€€€€€‰İ…±­Q¥µ”ˆè€ÈÌÜ°(€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥ÑQ¥µ”ˆè€ÈØÔÌ°(€€€€€€€€€€€€€€€€€€‰İ…¥Ñ¥¹Q¥µ”ˆè€ÈäÈ°(€€€€€€€€€€€€€€€€€€‰İ…±­¥ÍÑ…¹”ˆè€ÈØÌ¸äÄ°(€€€€€€€€€€€€€€€€€€‰İ…±­1¥µ¥Ñá••‘•ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€ÔÄÌä°(€€€€€€€€€€€€€€€€€€‰•±•Ù…Ñ¥½¹1½ÍĞˆè€À°(€€€€€€€€€€€€€€€€€€‰•±•Ù…Ñ¥½¹…¥¹•ˆè€À°(€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í™•ÉÌˆè€Ä°(€€€€€€€€€€€€€€€€€€‰™…É”ˆè€ˆÈ¸ÈÜˆ°(€€€€€€€€€€€€€€€€€€‰±•Ìˆèl(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔÈÀÜäÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÈÀààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÄÀ¸ÌĞ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€Øä°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰]1,ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰=É¥¥¸ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àÔÈÔĞÈØ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÈäÈäàää°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈÀÜäÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰9=I50ˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰%Qd!105IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\ÄÌˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\ÄÌˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àÔÈÔäØĞ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÈäÈäÀĞà°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈÀààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈÀààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰õÁííÕéáI ı!5qqHˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€Ğ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÄÀ¸ÌĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰É•±…Ñ¥Ù•¥É•Ñ¥½¸ˆè€‰AIPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑÉ••Ñ9…µ”ˆè€‰Á…Ñ ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…‰Í½±ÕÑ•¥É•Ñ¥½¸ˆè€‰M=UQ!MPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…å=¸ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…É•„ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‰½ÕÍ9…µ”ˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àÔÈØÈÄÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÈäÌÄÄÀÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰•±•Ù…Ñ¥½¸ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰É•¹Ñ•‘	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ä(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔÈÀààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÌÔÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÄĞÌÄÌ¸àØ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€ÄÌàÈ°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰MU	]dˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€‰\ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹å9…µ”ˆè€‰M5IP½ÉÁ½É…Ñ¥½¸ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åUÉ°ˆè€‰¡ÑÑÀè¼½İİÜ¹ÍµÉĞ¹½´¹Íœ¼ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•QåÁ”ˆè€Ä°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•%ˆè€‰\ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹å%ˆè€ˆÄéM5IPˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ¥Á%ˆè€‰\´Ä´ÌÄĞàˆ°(€€€€€€€€€€€€€€€€€€€€€€‰Í•ÉÙ¥•…Ñ”ˆè€ˆÈÀÈØ´Àà´ÈÔˆ°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰%Qd!105IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\ÄÌˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\ÄÌˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àÔÈÔäØĞ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÈäÈäÀĞà°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈÀààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈÀààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÈÄ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰M%5$5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Ìˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Ìˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÌÌÜÄÌ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÌÈÀÌĞ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌÔÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌÔÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÌÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÌÄ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•Éµ•‘¥…Ñ•MÑ½ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	U%L5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\ÄÈˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\ÄÈˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àÔÔÔÔÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÀÀÈĞÜÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈÄØØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈÄäØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÈÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰1Y9H5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\ÄÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\ÄÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àØÈÜØÜØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÀÜÌÜÜÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈÈààÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈÌÄàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÈÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰-1195IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\ÄÀˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\ÄÀˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àÜÄÄÔÈĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÄÄÌÌĞØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈĞÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈĞÌÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÈĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰1)U9%5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\äˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\äˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸ààÌÀĞäØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÄØĞÌàà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈÔĞÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈÔÜÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÈÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰Ae1	H5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\àˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\àˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸àäÌÀÌÌÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÄàÄÄØÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈØØäÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈØääÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÈØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰U9=L5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Üˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Üˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÀÌÄÀÀÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÄäÜÈÜÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈÜàÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈàÄÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÈÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰-5	985IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Øˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Øˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÄÈäÔÈÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÈÄÀÌÔÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÈäÀàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÈäÌàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÈÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Èà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	=,5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Ôˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Ôˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÌÀÄÜÀÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÈĞÀÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌÀäÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌÄÈÔÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Èà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Èä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰Q9 5I 5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Ğˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Ğˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äĞØÌààÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÈÜÈÀÈÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌÈÜÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌÌÀÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Èä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÌÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰õ½í•ÙéáHı	eA]1M1E)e9=)E!M!===5E5	-	-	M	Mm	%m4ı]<ı}=U=•-…-…=MeE}]­…İ½ÅÕõå¥ÅõÍ üı…9õ-m]e]e]ee•]e]eÅ%µ-¥]e]eÍ!%=Lüı•¥Í]m]e5EEe-55%=%======E==%=Íİ	­5¥•=EE=E%==E==E=%=%5%==%=%5%•Åüı]•İ¥5%=%5%==%=%=<üı¥½%=5%==%==%5%=%=5%=%5%=%55%55¥…-%5%=%5%=%5-%========E=E=EEDüı=EEEE<ı=…Í)EE<üıEE%=E%E=%EDüıEEDüı=]µLüı]­EE<üıEDı%EDı%EDı%=DüıEEDüıõÕ•<ıEEE=E5Dı%MõüıU]½EE<ıEDıDı4ıEDıı5Dı5ıEEE=EEEEEEEEE<üıEDı%ÍYEDı==EEE5E,ı=EEDı5E5EEE,ıMÍ• üıU¥EEıEEDıEDıEDıDıDıDıDıDıEDıEEDıEEı-EE-ÍEEEDıı5DıDıDıDıEDıEEEE-=EEE,ıµ½)EE5=EE=-E=-=E%=EE=DüıEE<ı=m­üüüı•Å<ı=EEEE=EEEEEEEEDıEEÕ ıE}•	­Y•	 ıEE ıDıE…EEE=%…-…­õ]=-=-=-=-…åE5E=E=E=EE=EEE=EEE=EEE=E,ıE,ı¥1E%EEEE=EDı=<ı5EDı5EEEE%=E-MÅüüıe­EDı5EEDıE<ııEDı<ııE<ııEDıEDıEEEDıEEE=-Dı-µİ¡E%E=EEEEE=EEE=EEE=EE=E5E%İ	E=%=E==E=%E-íÕE%=E=%E%­Õüı%måõE=E=E=E=E-Í…=E=E=-E==%===%==%¥õ	%5=%==%=%5%%5-5%=%5­å%5-5%5%=-%=%5%=%=%==%5-E}%==%5=%=%5%=%5%5-5-5-5-5-5---55---5-5-5%5-5%=%5%=%5%%-5-==%====E==E=E=E=EEE=EEEEEEEEEEEDıEDıDıEDıEDıDıEDıEEEEEE	=ıE	EE	E	-=	ÁE	E	E	E	==	ıE	E=E=E==E=======!=!5=!5!=!5)ı-!=)5!5)5)5 ı5!5)5 ıíÁ%ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€àÈÀ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèmt°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•M¡½ÉÑ9…µ”ˆè€‰\ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•1½¹9…µ”ˆè€‰MP]MP1%9ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ÄĞÄĞ(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔÌÔÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÌØÌÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÄÌä¸àĞ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€äÈÈ°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰]1,ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰M%5$5IPMQQ%=8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdé\Ìˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€‰\Ìˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÌÌÜÄÌ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÌÈÀÌĞ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌÔÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌÔÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰M%5$MQ8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÄØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÄØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÌĞØØÄ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÈÈØÈÈ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌØÌÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌäÈĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰}©•Å­¹åHüıé½Q=!		mAQYi	ıˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€ÄÌ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÄÌä¸àĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰É•±…Ñ¥Ù•¥É•Ñ¥½¸ˆè€‰AIPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑÉ••Ñ9…µ”ˆè€‰Á…Ñ ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…‰Í½±ÕÑ•¥É•Ñ¥½¸ˆè€‰M=UQ!MPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…å=¸ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…É•„ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‰½ÕÍ9…µ”ˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÌÌÜÄÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÌÈÀÌĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰•±•Ù…Ñ¥½¸ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰É•¹Ñ•‘	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ÄÌÀ(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔÌäÈĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÔÄØÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ĞÜØÄ¸Ô°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€ÈÀäØ°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰	ULˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€ˆÔˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹å9…µ”ˆè€‰M	LQÉ…¹Í¥Ğˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åUÉ°ˆè€‰¡ÑÑÀè¼½İİÜ¹Í‰ÍÑÉ…¹Í¥Ğ¹½´¹Íœ¼ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•QåÁ”ˆè€Ì°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•%ˆè€ˆÔˆ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹å%ˆè€ˆÄéM	MPˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ¥Á%ˆè€ˆÔ´È´ÌÀÀÈˆ°(€€€€€€€€€€€€€€€€€€€€€€‰Í•ÉÙ¥•…Ñ”ˆè€ˆÈÀÈØ´Àà´ÈÔˆ°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰M%5$MQ8ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÄØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÄØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÌĞØØÄ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÈÈØÈÈ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌØÌÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÌäÈĞÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ĞÈ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰1=e9APˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÄÀÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÄÀÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÔÌÔÀà°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÀÔÜà°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÄØÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÄØÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÔĞ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÔØ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•Éµ•‘¥…Ñ•MÑ½ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1,€ÄĞØˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÈØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÈØäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÔààÜØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞĞÌÄÜà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÌäàÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÀÄÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ĞÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰=A@	1,€ÈÈĞˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÄääˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÄääˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔÜÜĞÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÌØÌÀØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÀØäÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÀääÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ĞĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰=A@M%5$I8=9<ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÈÀäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÈÀäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÔäØäÌÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÀÔääÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÄÔØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÄàØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ĞÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰UA@!9$MQ8½=A@MUQˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÀĞÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÀĞÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÄÈÌØÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÄÔÔÄà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÈÌÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÈØÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ĞØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰=A@!9$Pˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÀÔÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÀÔÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÄäØÜÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞÌÜĞÀä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÌÀÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÌÌÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ĞÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰=A@5IQIH@½ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäØÀØÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäØÀØÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÈäĞÌÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌĞØäÔĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÌäÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞĞÈÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞØ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ğà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰Q!)A9MM ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäÜÀÄÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäÜÀÄÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÔäÔäÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÔÌÌÈÌÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÔÔÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÔàÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ĞÜ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€Ğä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰AI=1e5A%ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÈääˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÈääˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÔÔÔä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÔØÀÄÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞØÔÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞØàÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ğà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÔÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰MQ119Lˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÈàÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÈàÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØØÔää°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÔäÔÜÌÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞÜØàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞÜäàÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€Ğä°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÔÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	5I%4]1,ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÌÄÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÌÄÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØàÔäàÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌÔäÈÔĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞàÈÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞàÔÜÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÔÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÔÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰-=5<M!=AALˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäÜÀÔÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäÜÀÔÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äÜÀÌÜØà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÀĞĞĞÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔĞäÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔĞäÌÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÔÄ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÔÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰PQ= 0ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäÜÄÄäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäÜÄÄäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØääØÌà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÌÌÜÈÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÀÀÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÀÌÈÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÔÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÔĞ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰	1=e9Yˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäÜÄÈäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäÜÄÈäˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÜØÈÈ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØĞØÄàÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÀÜØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÄÀØÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%¹‘•àˆè€ÔÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½ÁM•ÅÕ•¹”ˆè€ÔÔ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰‘•±¹åIå-8üı™Í(üıùE•,üı}Í üıÕ1Åüı…Müıå™íDüıå=ÁüıU½üıù½,üıµ(üı¥EÁüıİÉ4üı9‘4ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€Èà(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèmt°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•M¡½ÉÑ9…µ”ˆè€ˆÔˆ°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ•1½¹9…µ”ˆè€‰M	MP	UL€Ôˆ°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€ÄÈÌä(€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…ÉÑQ¥µ”ˆè€ÄÜàÜØÔÔÄØÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹‘Q¥µ”ˆè€ÄÜàÜØÔÔÈØÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ••±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…±•±…äˆè€À°(€€€€€€€€€€€€€€€€€€€€€€‰É•…±Q¥µ”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÄÄÌ¸ÜÌ°(€€€€€€€€€€€€€€€€€€€€€€‰•¹•É…±¥é•‘½ÍĞˆè€ÜĞĞ°(€€€€€€€€€€€€€€€€€€€€€€‰Á…Ñ¡İ…äˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰µ½‘”ˆè€‰]1,ˆ°(€€€€€€€€€€€€€€€€€€€€€€‰ÑÉ…¹Í¥Ñ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰É½ÕÑ”ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€‰…•¹åQ¥µ•i½¹•=™™Í•Ğˆè€ÈààÀÀÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€‰¥¹Ñ•É±¥¹•]¥Ñ¡AÉ•Ù¥½ÕÍ1•œˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰™É½´ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰1=e9APˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á%ˆè€‰IIdèäàÄÀÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ½Á½‘”ˆè€ˆäàÄÀÄˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÔÌÔÀà°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÀÔÜà°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÄØÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰‘•Á…ÉÑÕÉ”ˆè€ÄÜàÜØÔÔÄØÌÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰QI9M%Pˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰Ñ¼ˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰¹…µ”ˆè€‰•ÍÑ¥¹…Ñ¥½¸ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØĞØÄÜà°(€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÀÀÀÔ°(€€€€€€€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù…°ˆè€ÄÜàÜØÔÔÈØÄÀÀÀ°(€€€€€€€€€€€€€€€€€€€€€€€€‰Ù•ÉÑ•áQåÁ”ˆè€‰9=I50ˆ(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰±••½µ•ÑÉäˆèì(€€€€€€€€€€€€€€€€€€€€€€€€‰Á½¥¹ÑÌˆè€‰…}©µÙÁåHüı5A)A½©±Á ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€‰±•¹Ñ ˆè€Ü(€€€€€€€€€€€€€€€€€€€€€ô°(€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ•ÁÌˆèl(€€€€€€€€€€€€€€€€€€€€€€€ì(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‘¥ÍÑ…¹”ˆè€ÄÄÌ¸ÜÌ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰É•±…Ñ¥Ù•¥É•Ñ¥½¸ˆè€‰AIPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑÉ••Ñ9…µ”ˆè€‰Á…Ñ ˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…‰Í½±ÕÑ•¥É•Ñ¥½¸ˆè€‰9=IQ!]MPˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰ÍÑ…å=¸ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰…É•„ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰‰½ÕÍ9…µ”ˆèÑÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±½¸ˆè€ÄÀÌ¸äØÔÌÔÀà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰±…Ğˆè€Ä¸ÌØÜÀÔÜà°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰•±•Ù…Ñ¥½¸ˆè€ˆˆ°(€€€€€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”(€€€€€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€€€€€‰É•¹Ñ•‘	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰İ…±­¥¹	¥­”ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€‰‘ÕÉ…Ñ¥½¸ˆè€äà(€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€€€t°(€€€€€€€€€€€€€€€€€€‰Ñ½½M±½Á•ˆè™…±Í”°(€€€€€€€€€€€€€€€€€€‰…ÉÉ¥Ù•‘Ñ•ÍÑ¥¹…Ñ¥½¹]¥Ñ¡I•¹Ñ•‘	¥å±”ˆè™…±Í”(€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€t(€€€€€€€€€€€ô°(€€€€€€€€€€€€‰µ•Ñ…‘…Ñ„ˆèì(€€€€€€€€€€€€€€‰Í•…É¡]¥¹‘½İUÍ•ˆè€ÈĞÀÀ°(€€€€€€€€€€€€€€‰¹•áÑ…Ñ•Q¥µ”ˆè€ÄÜàÜØÔÈÜàÀÀÀÀ°(€€€€€€€€€€€€€€‰ÁÉ•Ù…Ñ•Q¥µ”ˆè€ÄÜàÜØĞäØÀÀÀÀÀ(€€€€€€€€€€€ô°(€€€€€€€€€€€€‰ÁÉ•Ù¥½ÕÍA…•ÕÉÍ½Èˆè€‰É<Á	aŒÅE9U)Y­±AYY9™U!IEå	™ÍaTÅIMIUYU`Á=Iå	U±))Y­5`ÅI)QUTôˆ°(€€€€€€€€€€€€‰¹•áÑA…•ÕÉÍ½Èˆè€‰É<Á	aáE)Q­YeYåEEU‘%)É%Mİ	‘QY)IYI™ETÕ`ÁMU­±]EUá™Y±9IDôôˆ°(€€€€€€€€€€€€‰‘•‰Õ=ÕÑÁÕĞˆèì(€€€€€€€€€€€€€€‰ÁÉ•…±Õ±…Ñ¥½¹Q¥µ”ˆè€ÈÀäĞÌ°(€€€€€€€€€€€€€€‰‘¥É•ÑMÑÉ••ÑI½ÕÑ•ÉQ¥µ”ˆè€ÔÄØäÈÜÄÄÜ°(€€€€€€€€€€€€€€‰ÑÉ…¹Í¥ÑI½ÕÑ•ÉQ¥µ”ˆè€äĞÌÜÈÜàÔÄ°(€€€€€€€€€€€€€€‰™¥±Ñ•É¥¹Q¥µ”ˆè€ÌÀÌÔÈäÌ°(€€€€€€€€€€€€€€‰É•¹‘•É¥¹Q¥µ”ˆè€ÔäÜÈÔÌ°(€€€€€€€€€€€€€€‰Ñ½Ñ…±Q¥µ”ˆè€ÄĞØĞÌÈÔĞÜÌ°(€€€€€€€€€€€€€€‰ÑÉ…¹Í¥ÑI½ÕÑ•ÉQ¥µ•Ìˆèì(€€€€€€€€€€€€€€€€‰ÑÉ¥ÁA…ÑÑ•É¹¥±Ñ•ÉQ¥µ”ˆè€ÌÌÔÔÈÈÈĞ°(€€€€€€€€€€€€€€€€‰…•ÍÍÉ•ÍÍQ¥µ”ˆè€ÔÔààÈÄØÜ°(€€€€€€€€€€€€€€€€‰É…ÁÑ½ÉM•…É¡Q¥µ”ˆè€àÈĞÈÜÀÄàÔ°(€€€€€€€€€€€€€€€€‰¥Ñ¥¹•É…ÉåÉ•…Ñ¥½¹Q¥µ”ˆè€ÌÀÀÀØÌØä(€€€€€€€€€€€€€ô(€€€€€€€€€€€ô°(€€€€€€€€€€€€‰•±•Ù…Ñ¥½¹5•Ñ…‘…Ñ„ˆèì(€€€€€€€€€€€€€€‰•±±¥ÁÍ½¥‘Q½•½¥‘¥™™•É•¹”ˆè€Ü¸ĞÜĞÈĞààØààÀÌĞØÈ°(€€€€€€€€€€€€€€‰•½¥‘±•Ù…Ñ¥½¸ˆè™…±Í”(€€€€€€€€€€€ô°(€€€€€€€€€€€€‰}©…±…¸ˆèì(€€€€€€€€€€€€€€‰Í•ÉÙ¥”ˆè€‰Á±…¹¹•ˆ°(€€€€€€€€€€€€€€‰É•ÅÕ•ÍÑ•‘…Ñ”ˆè€ˆÀà´ÈÔ´ÈÀÈØˆ°(€€€€€€€€€€€€€€‰É•ÅÕ•ÍÑ•‘Q¥µ”ˆè€ˆÄàèÀÀèÀÀˆ°(€€€€€€€€€€€€€€‰Ñ¥µ•5½‘”ˆè€‰‘•Á…ÉĞˆ(€€€€€€€€€€€ô(€€€€€€€€€ô°(€€€€€€€€€€‰•ÉÉ½Èˆè¹Õ±°(€€€€€€€ô(€€€€€ô(€€€ô(€t)ô
