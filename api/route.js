@@ -82,7 +82,7 @@ function isNoRoute(response, data) {
     || /no .*route|no itinerary|not found/i.test(message);
 }
 
-async function requestRoute({ token, start, end, date, time, arriveBy = false, numItineraries = '3', maxWalkDistance = '1200' }) {
+async function requestRoute({ token, start, end, date, time, arriveBy = false, numItineraries = '3', maxWalkDistance = '2000' }) {
   const url = new URL('https://www.onemap.gov.sg/api/public/routingsvc/route');
   url.searchParams.set('start', start);
   url.searchParams.set('end', end);
