@@ -72,3 +72,46 @@ test('re-runs rail timing after the estimated bus arrival at the connector',()=>
     require('../train-schedule-source').railJourney = originalRailJourney;
   }
 });
+
+test('selects only a monitored bus that remains catchable after the rail transfer buffer',()=>{
+  const bus={arrivals:[3,14,24],monitored:[true,false,true],legs:[{arrivals:[3,14,24],monitored:[true,false,true]}]};
+  assert.equal(tools.futureMonitoredBusArrival(bus,10),24);
+  assert.equal(tools.futureMonitoredBusArrival(bus,21),null);
+});
+
+test('makes a bounded rail to direct bus transfer rankable when a monitored future bus is visible',()=>{
+  const rail={transfers:0,totalWalkMetres:120,estimatedTotalMinutes:18,legs:[{mode:'MRT',routeId:'DTL'}]};
+  const bus={
+    kind:'direct',transfers:0,totalWalkMetres:180,operator:'SBST',
+    board:{distanceMetres:75},alight:{distanceMetres:105},
+    arrivals:[5,25,39],monitored:[true,true,false],
+    legs:[{serviceNo:'20',direction:1,boardStopCode:'A',alightStopCode:'B',rideStops:5,routeDistanceKm:2,liveStatus:'ready',arrivals:[5,25,39],monitored:[true,true,false]}],
+  };
+  const result=tools.timedRailBusCandidate(rail,bus,{id:'DT20',name:'Fort Canning',lat:1.29,lng:103.84});
+  assert.equal(result.kind,'rail-bus');
+  assert.equal(result.rankable,true);
+  assert.equal(result.timingStatus,'estimated');
+  assert.equal(result.busTiming.boardingInMinutes,25);
+  assert.ok(result.busTiming.transferMarginMinutes>=4);
+  assert.equal(result.legs[1].selectedBoardingInMinutes,25);
+});
+
+test('keeps rail to bus unranked when the future bus is unmonitored or too early',()=>{
+  const rail={transfers:0,totalWalkMetres:100,estimatedTotalMinutes:20,legs:[{mode:'MRT',routeId:'EWL'}]};
+  const bus={
+    kind:'direct',transfers:0,totalWalkMetres:100,board:{distanceMetres:0},alight:{distanceMetres:0},
+    arrivals:[10,22,35],monitored:[true,true,false],
+    legs:[{serviceNo:'9',rideStops:4,routeDistanceKm:1.5,arrivals:[10,22,35],monitored:[true,true,false]}],
+  };
+  assert.equal(tools.timedRailBusCandidate(rail,bus,{id:'EW1',name:'Pasir Ris',lat:1.37,lng:103.95}),null);
+});
+
+test('keeps rail to bus unranked when bus ride uncertainty is too wide',()=>{
+  const rail={transfers:0,totalWalkMetres:100,estimatedTotalMinutes:10,legs:[{mode:'MRT',routeId:'EWL'}]};
+  const bus={
+    kind:'direct',transfers:0,totalWalkMetres:100,board:{distanceMetres:0},alight:{distanceMetres:0},
+    arrivals:[5,20,40],monitored:[true,true,true],
+    legs:[{serviceNo:'89',rideStops:44,routeDistanceKm:17.7,arrivals:[5,20,40],monitored:[true,true,true]}],
+  };
+  assert.equal(tools.timedRailBusCandidate(rail,bus,{id:'EW1',name:'Pasir Ris',lat:1.37,lng:103.95}),null);
+});
