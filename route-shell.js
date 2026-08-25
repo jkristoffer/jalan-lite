@@ -16,6 +16,7 @@
   let mapPosition = { center: { ...DEFAULT_CENTER }, zoom: 14, label: 'Singapore' };
   let routeState = { status: 'idle', data: null, error: '' };
   let map = null;
+  let mapSelectionMarkers = [];
   let mapGeneration = 0;
   let viewing = false;
   let selectedLegIndex = null;
@@ -887,6 +888,8 @@
 
   function destroyMap() {
     mapGeneration += 1;
+    mapSelectionMarkers.forEach((marker) => { try { marker.remove(); } catch {} });
+    mapSelectionMarkers = [];
     if (map) {
       try { map.remove(); } catch {}
     }
@@ -1025,6 +1028,61 @@
     return output;
   }
 
+  function mapFeatures(itinerary) {
+    return (itinerary?.legs || []).map((leg, index) => {
+      const coordinates = leg.geometry ? decodePolyline(leg.geometry) : [];
+      return coordinates.length > 1
+        ? { type: 'Feature', properties: { mode: leg.mode, index }, geometry: { type: 'LineString', coordinates } }
+        : null;
+    }).filter(Boolean);
+  }
+
+  function updateInlineRouteSelection(targetMap = map) {
+    const itinerary = routeState.data;
+    if (!targetMap || !itinerary || !window.mapboxgl) return;
+    const features = mapFeatures(itinerary);
+    const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
+    const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
+    const selectedOpacity = selectedLeg ? 0.22 : 0.88;
+
+    shell.querySelectorAll('.timeline-item[data-route-leg]').forEach((item) => {
+      item.classList.toggle('selected', Number(item.dataset.routeLeg) === selectedLegIndex);
+    });
+
+    try {
+      ['route-walk', 'route-bus', 'route-mrt'].forEach((layerId) => {
+        if (targetMap.getLayer(layerId)) targetMap.setPaintProperty(layerId, 'line-opacity', selectedOpacity);
+      });
+      if (targetMap.getLayer('route-selected')) targetMap.removeLayer('route-selected');
+      if (selectedFeature) {
+        targetMap.addLayer({
+          id: 'route-selected',
+          type: 'line',
+          source: 'route',
+          filter: ['==', ['get', 'index'], selectedLegIndex],
+          paint: { 'line-color': '#D42E12', 'line-width': 9, 'line-opacity': 1 },
+        });
+      }
+
+      mapSelectionMarkers.forEach((marker) => { try { marker.remove(); } catch {} });
+      mapSelectionMarkers = [];
+      if (selectedLeg) {
+        const from = selectedLeg.fromPoint || (selectedFeature?.geometry.coordinates[0] ? { lng: selectedFeature.geometry.coordinates[0][0], lat: selectedFeature.geometry.coordinates[0][1] } : null);
+        const lastCoordinate = selectedFeature?.geometry.coordinates[selectedFeature.geometry.coordinates.length - 1];
+        const to = selectedLeg.toPoint || (lastCoordinate ? { lng: lastCoordinate[0], lat: lastCoordinate[1] } : null);
+        if (from) mapSelectionMarkers.push(new mapboxgl.Marker({ color: '#005EC4' }).setLngLat([from.lng, from.lat]).addTo(targetMap));
+        if (to) mapSelectionMarkers.push(new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([to.lng, to.lat]).addTo(targetMap));
+      }
+
+      const bounds = new mapboxgl.LngLatBounds();
+      const focusFeatures = selectedFeature ? [selectedFeature] : features;
+      focusFeatures.forEach((feature) => feature.geometry.coordinates.forEach((coordinate) => bounds.extend(coordinate)));
+      if (selectedLeg?.fromPoint) bounds.extend([selectedLeg.fromPoint.lng, selectedLeg.fromPoint.lat]);
+      if (selectedLeg?.toPoint) bounds.extend([selectedLeg.toPoint.lng, selectedLeg.toPoint.lat]);
+      if (!bounds.isEmpty()) targetMap.fitBounds(bounds, { padding: 48, duration: 0 });
+    } catch {}
+  }
+
   async function renderViewerMap(containerId = 'route-viewer-map', fallbackId = 'viewer-fallback', viewerMode = true) {
     const generation = mapGeneration;
     const container = document.getElementById(containerId);
@@ -1044,9 +1102,7 @@
     try {
       mapboxgl.accessToken = await mapToken();
       if (generation !== mapGeneration || !active() || !document.getElementById(containerId)) return;
-      const features = itinerary.legs.map((leg, index) => { const coordinates = leg.geometry ? decodePolyline(leg.geometry) : []; return coordinates.length > 1 ? { type: 'Feature', properties: { mode: leg.mode, index }, geometry: { type: 'LineString', coordinates } } : null; }).filter(Boolean);
-      const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
-      const selectedFeature = features.find((feature) => feature.properties.index === selectedLegIndex);
+      const features = mapFeatures(itinerary);
       const nextMap = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [saved.originPoint.lng, saved.originPoint.lat], zoom: 12.5, dragRotate: false, touchPitch: false });
       if (generation !== mapGeneration || !active()) { nextMap.remove(); return; }
       map = nextMap;
@@ -1055,37 +1111,17 @@
         if (generation !== mapGeneration || !active() || map !== nextMap) return;
         if (features.length) {
           nextMap.addSource('route', { type: 'geojson', data: { type: 'FeatureCollection', features } });
-          const opacity = selectedLeg ? 0.22 : 0.88;
-          nextMap.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': '#777', 'line-width': 4, 'line-opacity': opacity, 'line-dasharray': [1, 1.5] } });
-          nextMap.addLayer({ id: 'route-bus', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'BUS'], paint: { 'line-color': '#1f7a4d', 'line-width': 6, 'line-opacity': opacity } });
-          nextMap.addLayer({ id: 'route-mrt', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'SUBWAY'], paint: { 'line-color': '#222', 'line-width': 7, 'line-opacity': opacity } });
-          if (selectedLeg) nextMap.addLayer({ id: 'route-selected', type: 'line', source: 'route', filter: ['==', ['get', 'index'], selectedLegIndex], paint: { 'line-color': '#D42E12', 'line-width': 9, 'line-opacity': 1 } });
-          const bounds = new mapboxgl.LngLatBounds();
-          const focusFeatures = selectedFeature ? [selectedFeature] : features;
-          focusFeatures.forEach((feature) => feature.geometry.coordinates.forEach((coordinate) => bounds.extend(coordinate)));
-          if (selectedLeg?.fromPoint) bounds.extend([selectedLeg.fromPoint.lng, selectedLeg.fromPoint.lat]);
-          if (selectedLeg?.toPoint) bounds.extend([selectedLeg.toPoint.lng, selectedLeg.toPoint.lat]);
-          if (!bounds.isEmpty()) nextMap.fitBounds(bounds, { padding: 48, duration: 0 });
-        } else if (selectedLeg?.fromPoint || selectedLeg?.toPoint) {
-          const bounds = new mapboxgl.LngLatBounds();
-          if (selectedLeg.fromPoint) bounds.extend([selectedLeg.fromPoint.lng, selectedLeg.fromPoint.lat]);
-          if (selectedLeg.toPoint) bounds.extend([selectedLeg.toPoint.lng, selectedLeg.toPoint.lat]);
-          if (!bounds.isEmpty()) nextMap.fitBounds(bounds, { padding: 72, duration: 0 });
+          nextMap.addLayer({ id: 'route-walk', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'WALK'], paint: { 'line-color': '#777', 'line-width': 4, 'line-opacity': 0.88, 'line-dasharray': [1, 1.5] } });
+          nextMap.addLayer({ id: 'route-bus', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'BUS'], paint: { 'line-color': '#1f7a4d', 'line-width': 6, 'line-opacity': 0.88 } });
+          nextMap.addLayer({ id: 'route-mrt', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'SUBWAY'], paint: { 'line-color': '#222', 'line-width': 7, 'line-opacity': 0.88 } });
         }
         new mapboxgl.Marker({ color: '#16181A' }).setLngLat([saved.originPoint.lng, saved.originPoint.lat]).addTo(nextMap);
         new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([saved.destinationPoint.lng, saved.destinationPoint.lat]).addTo(nextMap);
-        if (selectedLeg) {
-          const from = selectedLeg.fromPoint || (selectedFeature?.geometry.coordinates[0] ? { lng: selectedFeature.geometry.coordinates[0][0], lat: selectedFeature.geometry.coordinates[0][1] } : null);
-          const lastCoordinate = selectedFeature?.geometry.coordinates[selectedFeature.geometry.coordinates.length - 1];
-          const to = selectedLeg.toPoint || (lastCoordinate ? { lng: lastCoordinate[0], lat: lastCoordinate[1] } : null);
-          if (from) new mapboxgl.Marker({ color: '#005EC4' }).setLngLat([from.lng, from.lat]).addTo(nextMap);
-          if (to) new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([to.lng, to.lat]).addTo(nextMap);
-        }
+        updateInlineRouteSelection(nextMap);
       });
       nextMap.on('error', () => { if (generation === mapGeneration) showFallback(); });
     } catch { if (generation === mapGeneration) showFallback(); }
   }
-
   function renderInlineRouteMap() {
     return renderViewerMap('route-inline-map', 'route-inline-fallback', false);
   }
@@ -1370,7 +1406,7 @@
         else if (action === 'exit-focus') exitFocusMode();
         else if (action === 'notifications') enableNotifications();
         else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
-        else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; dashboardPane = 'route'; render(); } }
+        else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; if (viewing) dashboardPane = 'route'; else setDashboardPane('route'); updateInlineRouteSelection(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
         else if (action === 'reroute') routeData({ preserveCurrent: true });
         else if (action === 'viewer' && routeState.data) { selectedLegIndex = null; setDashboardPane('route'); }
