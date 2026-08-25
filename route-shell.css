@@ -92,7 +92,7 @@
 .journey-temporal-confidence{border:1px solid var(--edge,#C9C6BF);border-radius:999px;padding:5px 8px;background:#fff;color:var(--muted,#6E7377);font:600 10px 'IBM Plex Mono',monospace;white-space:nowrap}
 .journey-temporal h2{margin:16px 0 0;font-size:23px;line-height:1.1;letter-spacing:-.02em}
 .journey-temporal p{margin:8px 0 0;color:var(--muted,#6E7377);font-size:13px;line-height:1.4}
-.journey-temporal-next{display:flex;align-items:baseline;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#DFDDD7);color:var(--muted,#6E7377);font-size:13px}
+.journey-temporal-next{display:flex;align-items:baseline;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#DFDDD7);color:var(--muted,#6E7377);font-size:13px}.journey-temporal-next[hidden]{display:none!important}
 .journey-temporal-next span{font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase}
 .journey-temporal-next strong{color:var(--ink,#16181A);font-size:14px}
 .journey-temporal-action{height:46px;margin-top:16px;border-radius:14px;font-size:14px}
@@ -126,9 +126,9 @@
 .journey-hero{margin-top:0;border:1px solid var(--line,#DFDDD7);border-radius:22px;padding:18px 18px 20px;background:#fff;overflow:hidden;box-shadow:0 8px 30px rgba(22,24,26,.045)}
 .journey-hero-route{position:relative}
 .journey-hero-route:before{content:'';position:absolute;left:6px;top:13px;bottom:24px;width:1px;background:var(--edge,#C9C6BF)}
-.journey-hero-location{position:relative;display:grid;grid-template-columns:24px minmax(0,1fr);gap:12px;align-items:center}
+.journey-hero-location{position:relative;display:grid;grid-template-columns:24px minmax(0,1fr);gap:12px;align-items:center}.journey-hero-location>div{min-width:0}
 .journey-hero-location+.journey-hero-location{margin-top:16px}
-.journey-hero-location .journey-place{font-size:19px;line-height:1.2}
+.journey-hero-location .journey-place{font-size:19px;line-height:1.2;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 .journey-hero-route .journey-label{margin-bottom:3px}
 .journey-hero-route .journey-time-grid{margin:18px -18px 0}
 .journey-hero-state{margin-top:18px;padding:16px;border:1px solid var(--line,#DFDDD7);border-radius:17px;background:#F1F0EC}
