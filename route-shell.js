@@ -32,6 +32,7 @@
   let focusClockTimer = null;
   let focusWakeLock = null;
   let temporalTimer = null;
+  let dashboardPane = 'now';
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
@@ -144,9 +145,17 @@
     const arriveBy = !currentRoute && saved?.timeMode === 'arrive';
     const requested = currentRoute ? (itinerary.service === 'next' ? 'Next available' : 'Now') : timeLabel(saved?.departureTime || draftState.departureTime);
     const leftLabel = currentRoute ? (itinerary.service === 'next' ? 'Next departure' : 'Leave now') : (arriveBy ? 'Arrive by' : 'Leave at');
-    return '<section class="journey-card"><div class="journey-row"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">' + escapeHtml(saved.origin) + '</div></div></div><div class="journey-row"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">' + escapeHtml(saved.destination) + '</div></div></div><div class="journey-time-grid"><div><span class="route-field-label">' + leftLabel + '</span><strong>' + escapeHtml(arriveBy ? requested : (currentRoute ? departure : departure)) + '</strong></div><div><span class="route-field-label">' + (arriveBy ? 'Expected departure' : 'Expected arrival') + '</span><strong>' + escapeHtml(arriveBy ? (departure || '—') : (arrival || '—')) + '</strong></div></div></section>';
+    return '<div class="journey-hero-route"><div class="journey-hero-location"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">' + escapeHtml(saved.origin) + '</div></div></div><div class="journey-hero-location"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">' + escapeHtml(saved.destination) + '</div></div></div><div class="journey-time-grid"><div><span class="route-field-label">' + leftLabel + '</span><strong>' + escapeHtml(arriveBy ? requested : (currentRoute ? departure : departure)) + '</strong></div><div><span class="route-field-label">' + (arriveBy ? 'Expected departure' : 'Expected arrival') + '</span><strong>' + escapeHtml(arriveBy ? (departure || '—') : (arrival || '—')) + '</strong></div></div></div>';
   }
 
+  function journeyHero() {
+    const state = journeyTemporalState();
+    const focusButton = routeState.data
+      ? `<button id='journey-hero-focus' class='focus-launch-button journey-hero-focus' data-route-action='focus'${state.isStale || routeState.status === 'rerouting' ? ' hidden' : ''}>Focus mode</button>`
+      : '';
+    const notice = routeState.notice ? `<div class='journey-hero-notice' role='status'>${escapeHtml(routeState.notice)}</div>` : '';
+    return `<section class='journey-hero'>${journey()}${temporalCard()}${notice}${focusButton}</section>`;
+  }
   function timing(leg) {
     if (leg.mode === 'BUS' && leg.live?.arrivals) {
       const arrivals = leg.live.arrivals.filter(Number.isFinite).slice(0, 3);
@@ -465,25 +474,21 @@
     if (!itinerary) return '';
     const rerouting = routeState.status === 'rerouting' ? '<div class="route-rerouting" role="status">Recalculating with the latest route data…</div>' : '';
     const notice = routeState.notice ? `<div class="route-inline-notice" role="status">${escapeHtml(routeState.notice)}</div>` : '';
-    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2><p class="route-card-helper">Tap a journey leg to see it on the map.</p></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div><button class="focus-launch-button" data-route-action="focus">Enter Focus mode</button>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
+    return `<section class="best-route-card"><div class="route-card-top"><div><div class="route-card-label">${escapeHtml(routeLabel(itinerary))}</div><h2>${durationLabel(itinerary.duration)}</h2><p class="route-card-helper">Tap a journey leg to see it on the map.</p></div><div class="route-summary-meta">${itinerary.transfers} transfer${itinerary.transfers === 1 ? '' : 's'}</div></div>${rerouting}${notice}${disruptionBanner(itinerary)}${alternatives(itinerary)}${timeline(itinerary)}<button class="route-view-button" data-route-action="viewer">View route on map</button></section>`;
   }
 
   function temporalCard() {
     const state = journeyTemporalState();
-    if (state.phase === 'loading') return '';
+    if (state.phase === 'loading') {
+      const failure = routeState.status === 'error';
+      const detail = failure ? routeState.error : 'Checking Singapore public transport.';
+      return `<div id='journey-hero-state' class='journey-hero-state journey-hero-state-loading' role='status'><div class='journey-hero-state-top'><div><div class='route-card-label'>${failure ? 'ROUTE UNAVAILABLE' : 'PLANNING'}</div><strong id='journey-temporal-countdown'>—</strong></div><span id='journey-temporal-confidence' class='journey-temporal-confidence' hidden></span></div><h2 id='journey-temporal-action'>${failure ? 'Route unavailable' : 'Finding your route…'}</h2><p id='journey-temporal-detail'>${escapeHtml(detail)}</p></div>`;
+    }
     const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
     const confidenceText = confidence ? confidence.label + ' · ' + confidence.source : '';
-    const actionButton = state.isStale
-      ? '<button class="route-primary journey-temporal-action" data-route-action="refresh-now">Recalculate from now</button>'
-      : '<button class="route-primary journey-temporal-action" data-route-action="refresh-now" hidden>Recalculate from now</button>';
-    return '<section id="journey-temporal-card" class="journey-temporal journey-temporal-' + state.phase + '" aria-live="polite">'
-      + '<div class="journey-temporal-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown">' + escapeHtml(temporalCountdownLabel(state)) + '</strong></div>'
-      + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>')
-      + '</div><h2 id="journey-temporal-action">' + escapeHtml(state.currentAction) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p>'
-      + '<div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>'
-      + actionButton + '</section>';
+    const actionButton = `<button class='route-primary journey-hero-refresh' data-route-action='refresh-now'${state.isStale ? '' : ' hidden'}>Recalculate from now</button>`;
+    return `<div id='journey-hero-state' class='journey-hero-state journey-hero-state-${state.phase}' aria-live='polite'><div class='journey-hero-state-top'><div><div id='journey-temporal-label' class='route-card-label'>${escapeHtml(state.label)}</div><strong id='journey-temporal-countdown'>${escapeHtml(temporalCountdownLabel(state))}</strong></div>${confidenceText ? `<span id='journey-temporal-confidence' class='journey-temporal-confidence'>${escapeHtml(confidenceText)}</span>` : `<span id='journey-temporal-confidence' class='journey-temporal-confidence' hidden></span>`}</div><h2 id='journey-temporal-action'>${escapeHtml(state.currentAction)}</h2><p id='journey-temporal-detail'>${escapeHtml(state.detail)}</p><div id='journey-temporal-next' class='journey-temporal-next'${state.nextAction ? '' : ' hidden'}><span>Then</span><strong>${escapeHtml(state.nextAction)}</strong></div>${actionButton}</div>`;
   }
-
   function modeStatusLabel(status) {
     return ({ live: 'live', partial: 'partly live', alert: 'alert', checking: 'checking', fallback: 'fallback', scheduled: 'scheduled' })[status] || '—';
   }
@@ -560,7 +565,35 @@
     }
   }
 
-  function dashboard() {
+  function dashboardPaneIndex(pane) {
+    const index = ['now', 'route', 'live'].indexOf(pane);
+    return index < 0 ? 0 : index;
+  }
+
+  function dashboardPaneLabel(pane) {
+    return ({ now: 'Now', route: 'Route', live: 'Live' })[pane] || 'Now';
+  }
+
+  function dashboardAlerts() {
+    return (routeState.data?.liveAlerts || []).filter((alert) => alert.header || alert.description);
+  }
+
+  function dashboardAlert() {
+    const alerts = dashboardAlerts();
+    if (!alerts.length) return '';
+    const first = alerts[0];
+    const count = alerts.length > 1 ? `${alerts.length} alerts` : 'Affects this journey';
+    return `<div class='dashboard-alert-strip' role='alert'><span class='dashboard-alert-icon'><span class='live-dot'></span>Live alert</span><strong>${escapeHtml(first.header || first.description)}</strong><span class='dashboard-alert-count'>${escapeHtml(count)}</span><button class='route-link' data-route-action='dashboard-pane' data-dashboard-pane='live'>View</button></div>`;
+  }
+
+  function dashboardNav() {
+    const active = dashboardPane;
+    const alerts = dashboardAlerts();
+    const panes = ['now', 'route', 'live'];
+    return `<nav class='dashboard-nav' aria-label='Commute sections' role='tablist'>${panes.map((pane) => { const selected = pane === active; const badge = pane === 'live' && alerts.length ? `<span class='dashboard-nav-badge'>${alerts.length}</span>` : ''; return `<button id='dashboard-tab-${pane}' type='button' role='tab' aria-selected='${selected}' aria-controls='dashboard-pane-${pane}' class='dashboard-nav-button${selected ? ' selected' : ''}' data-route-action='dashboard-pane' data-dashboard-pane='${pane}'>${dashboardPaneLabel(pane)}${badge}</button>`; }).join('')}</nav>`;
+  }
+
+  function timingCard() {
     const itinerary = routeState.data;
     const hasBus = itinerary?.legs.some((leg) => leg.mode === 'BUS');
     const hasMrt = itinerary?.legs.some((leg) => leg.mode === 'SUBWAY');
@@ -571,9 +604,55 @@
     const sourceHeading = `Bus ${hasBus ? modeStatusLabel(busStatus) : '—'} · MRT ${hasMrt ? modeStatusLabel(mrtStatus) : '—'}`;
     const refreshDisabled = liveRefreshInFlight || liveRefreshStatus === 'loading' || !hasLiveTiming(itinerary);
     const refreshLabel = liveRefreshInFlight || liveRefreshStatus === 'loading' ? 'Updating…' : 'Refresh live data';
-    return `<div class="route-panel">${brand()}<div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Your commute</h1></div><button class="route-link compact" data-route-action="edit">Edit</button></div>${journey()}${temporalCard()}${card()}<section class="timing-card"><div class="timing-heading"><div><div class="route-card-label">Timing confidence</div><h2>${sourceHeading}</h2></div><div class="timing-status"><span class="live-state live-state-${escapeHtml(summary.tone)}">${escapeHtml(summary.label)}</span><span id="live-freshness" class="live-freshness">${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class="timing-controls"><span class="timing-control-note">${escapeHtml(liveFreshness())}</span><button type="button" class="timing-refresh" data-route-action="refresh-live" ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button></section>${notificationsCard()}<div class="route-actions"><button class="route-primary" data-route-action="refresh">Recalculate route</button><button class="route-link" data-route-action="bus">Open bus arrivals</button><button class="route-link" data-route-action="clear">Remove saved commute</button></div></div>`;
+    return `<section class='timing-card'><div class='timing-heading'><div><div class='route-card-label'>Timing confidence</div><h2>${sourceHeading}</h2></div><div class='timing-status'><span class='live-state live-state-${escapeHtml(summary.tone)}'>${escapeHtml(summary.label)}</span><span id='live-freshness' class='live-freshness'>${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p><div class='timing-controls'><span class='timing-control-note'>${escapeHtml(liveFreshness())}</span><button type='button' class='timing-refresh' data-route-action='refresh-live' ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class='route-link demo-disruption-link' data-route-action='demo-disruption'>Preview disruption flow</button></section>`;
   }
 
+  function routeActions() {
+    return `<div class='route-actions dashboard-actions'><button class='route-primary' data-route-action='refresh'>Recalculate route</button><button class='route-link' data-route-action='bus'>Open bus arrivals</button><button class='route-link' data-route-action='clear'>Remove saved commute</button></div>`;
+  }
+
+  function updateDashboardNavDom() {
+    const active = dashboardPaneIndex(dashboardPane);
+    shell.querySelectorAll('.dashboard-nav-button').forEach((button) => {
+      const selected = dashboardPaneIndex(button.dataset.dashboardPane) === active;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    shell.querySelectorAll('.dashboard-pane').forEach((pane, index) => {
+      pane.setAttribute('aria-hidden', String(index !== active));
+    });
+  }
+
+  function syncDashboardPager() {
+    const pager = document.getElementById('dashboard-pager');
+    if (!pager) return;
+    const moveToActive = () => { pager.scrollLeft = pager.clientWidth * dashboardPaneIndex(dashboardPane); };
+    moveToActive();
+    updateDashboardNavDom();
+    let scrollTimer = null;
+    pager.addEventListener('scroll', () => {
+      if (scrollTimer) return;
+      scrollTimer = window.setTimeout(() => {
+        scrollTimer = null;
+        const index = Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth));
+        const panes = ['now', 'route', 'live'];
+        dashboardPane = panes[Math.max(0, Math.min(panes.length - 1, index))];
+        updateDashboardNavDom();
+      }, 80);
+    }, { passive: true });
+  }
+
+  function setDashboardPane(pane) {
+    dashboardPane = ['now', 'route', 'live'].includes(pane) ? pane : 'now';
+    updateDashboardNavDom();
+    const pager = document.getElementById('dashboard-pager');
+    if (pager) pager.scrollTo({ left: pager.clientWidth * dashboardPaneIndex(dashboardPane), behavior: 'smooth' });
+  }
+
+  function dashboard() {
+    return `<div class='route-panel'>${brand()}<div class='route-header'><div><div class='route-kicker'>Saved commute</div><h1>Your commute</h1></div><button class='route-link compact' data-route-action='edit'>Edit</button></div>${dashboardNav()}${dashboardAlert()}<div id='dashboard-pager' class='dashboard-pager' aria-label='Commute content'><div class='dashboard-track'><section id='dashboard-pane-now' class='dashboard-pane' role='tabpanel' aria-labelledby='dashboard-tab-now'>${journeyHero()}</section><section id='dashboard-pane-route' class='dashboard-pane' role='tabpanel' aria-labelledby='dashboard-tab-route'>${card()}</section><section id='dashboard-pane-live' class='dashboard-pane' role='tabpanel' aria-labelledby='dashboard-tab-live'>${timingCard()}${notificationsCard()}${routeActions()}</section></div></div></div>`;
+  }
   function demoTimeline(rerouted) {
     const legs = rerouted ? [
       { mode: 'WALK', title: 'Walk to Paya Lebar MRT', meta: '320 m · 4 min', times: '8:30 → 8:34' },
@@ -748,7 +827,7 @@
 
   function updateTemporalDom() {
     if (document.hidden || focusMode || viewing || pickerField || disruptionDemoOpen) return;
-    const card = document.getElementById('journey-temporal-card');
+    const card = document.getElementById('journey-hero-state');
     if (!card) return;
     const state = journeyTemporalState();
     const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
@@ -759,7 +838,8 @@
     const next = document.getElementById('journey-temporal-next');
     const confidenceNode = document.getElementById('journey-temporal-confidence');
     const refresh = card.querySelector('[data-route-action="refresh-now"]');
-    card.className = 'journey-temporal journey-temporal-' + state.phase;
+    const focus = document.getElementById('journey-hero-focus');
+    card.className = 'journey-hero-state journey-hero-state-' + state.phase;
     if (label) label.textContent = state.label;
     if (countdown) countdown.textContent = temporalCountdownLabel(state);
     if (action) action.textContent = state.currentAction;
@@ -777,6 +857,7 @@
       refresh.disabled = routeState.status === 'rerouting';
       refresh.textContent = routeState.status === 'rerouting' ? 'Updating route…' : 'Recalculate from now';
     }
+    if (focus) focus.hidden = state.isStale || !routeState.data || routeState.status === 'rerouting';
   }
 
   function syncTemporalClock() {
@@ -795,6 +876,7 @@
     if (saved && !pickerField && !viewing && saved.originPoint && saved.destinationPoint && routeState.status === 'idle') routeData();
     syncLiveRefresh();
     syncTemporalClock();
+    syncDashboardPager();
   }
 
   function openPicker(field) {
@@ -1184,13 +1266,14 @@
         else if (action === 'demo-reset') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'alert'; render(); }
         else if (action === 'demo-fallback') { if (disruptionDemoTimer) window.clearTimeout(disruptionDemoTimer); disruptionDemoTimer = null; disruptionDemoStep = 'fallback'; render(); }
         else if (action === 'bus') { cancelAsyncWork(); destroyMap(); shell.hidden = true; launcher.hidden = false; }
-        else if (action === 'edit') { cancelAsyncWork(); draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
-        else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); routeState = { status: 'idle', data: null, error: '' }; render(); } }
-        else if (action === 'clear') { cancelAsyncWork(); localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
+        else if (action === 'edit') { cancelAsyncWork(); dashboardPane = 'now'; draftState = draft(saved); saved = null; routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ id: 'route-1', ...draftState, updatedAt: new Date().toISOString() }); dashboardPane = 'now'; routeState = { status: 'idle', data: null, error: '' }; render(); } }
+        else if (action === 'clear') { cancelAsyncWork(); dashboardPane = 'now'; localStorage.removeItem(STORAGE_KEY); saved = null; draftState = draft(); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
         else if (action === 'cancel') closePicker();
         else if (action === 'confirm') { draftState[pickerField] = mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label; draftState[`${pickerField}Point`] = { ...mapPosition.center }; closePicker(); }
         else if (action === 'manual') manualLocation();
         else if (action === 'locate') locate();
+        else if (action === 'dashboard-pane') setDashboardPane(button.dataset.dashboardPane);
         else if (action === 'refresh-now') routeData({ fromNow: true });
         else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'refresh-live') refreshLiveTimings();
