@@ -12,6 +12,7 @@ const BUS_MAX_DWELL_MINUTES = 0.5;
 const MAX_BUS_TIMING_SPREAD_MINUTES = 15;
 const MAX_BUS_ESTIMATED_RIDE_MINUTES = 45;
 const MAX_INTERMODAL_TIMING_SPREAD_MINUTES = 20;
+const RAIL_TO_BUS_TRANSFER_BUFFER_MINUTES = 4;
 
 function captureResponse() {
   const result = { status: 200, body: null, headers: {} };
@@ -50,9 +51,8 @@ function walkMinutes(distanceMetres) {
   return Math.max(0, (Number(distanceMetres) || 0) / WALKING_SPEED_METRES_PER_SECOND / 60);
 }
 
-function estimateDirectBusTiming(candidate) {
+function estimateBusRideWindow(candidate) {
   if (!candidate || Number(candidate.transfers) !== 0 || !Array.isArray(candidate.legs) || candidate.legs.length !== 1) return null;
-  if (!Number.isFinite(candidate.catchableArrivalMinutes)) return null;
   const leg = candidate.legs[0];
   const distanceKm = Number(leg.routeDistanceKm ?? candidate.routeDistanceKm);
   const rideStops = Number(leg.rideStops ?? candidate.rideStops);
@@ -63,20 +63,29 @@ function estimateDirectBusTiming(candidate) {
   const maxRideMinutes = (distanceKm / BUS_SLOW_SPEED_KMH) * 60 + intermediateStops * BUS_MAX_DWELL_MINUTES;
   const estimatedRideMinutes = (minRideMinutes + maxRideMinutes) / 2;
   const spreadMinutes = maxRideMinutes - minRideMinutes;
-  const stationWalkMinutes = walkMinutes(candidate.alight?.distanceMetres);
-  const readyAtConnectorMinutes = candidate.catchableArrivalMinutes + estimatedRideMinutes + stationWalkMinutes;
-  const minReadyAtConnectorMinutes = candidate.catchableArrivalMinutes + minRideMinutes + stationWalkMinutes;
-  const maxReadyAtConnectorMinutes = candidate.catchableArrivalMinutes + maxRideMinutes + stationWalkMinutes;
   return {
     minRideMinutes,
     estimatedRideMinutes,
     maxRideMinutes,
     spreadMinutes,
+    reliable: spreadMinutes <= MAX_BUS_TIMING_SPREAD_MINUTES && estimatedRideMinutes <= MAX_BUS_ESTIMATED_RIDE_MINUTES,
+  };
+}
+
+function estimateDirectBusTiming(candidate) {
+  if (!Number.isFinite(candidate?.catchableArrivalMinutes)) return null;
+  const ride = estimateBusRideWindow(candidate);
+  if (!ride) return null;
+  const stationWalkMinutes = walkMinutes(candidate.alight?.distanceMetres);
+  const readyAtConnectorMinutes = candidate.catchableArrivalMinutes + ride.estimatedRideMinutes + stationWalkMinutes;
+  const minReadyAtConnectorMinutes = candidate.catchableArrivalMinutes + ride.minRideMinutes + stationWalkMinutes;
+  const maxReadyAtConnectorMinutes = candidate.catchableArrivalMinutes + ride.maxRideMinutes + stationWalkMinutes;
+  return {
+    ...ride,
     stationWalkMinutes,
     readyAtConnectorMinutes,
     minReadyAtConnectorMinutes,
     maxReadyAtConnectorMinutes,
-    reliable: spreadMinutes <= MAX_BUS_TIMING_SPREAD_MINUTES && estimatedRideMinutes <= MAX_BUS_ESTIMATED_RIDE_MINUTES,
   };
 }
 
@@ -99,6 +108,7 @@ function busLegs(candidate) {
     routeDistanceKm: leg.routeDistanceKm,
     liveStatus: leg.liveStatus || candidate.liveStatus || 'unknown',
     arrivals: leg.arrivals || (leg === candidate.legs?.[0] ? candidate.arrivals : undefined),
+    monitored: leg.monitored || (leg === candidate.legs?.[0] ? candidate.monitored : undefined),
   }));
 }
 
@@ -166,8 +176,78 @@ function composeRailBus(rail, bus, station) {
     transfers: rail.transfers + (Number(bus.transfers) || 0) + 1,
     totalWalkMetres: (Number(rail.totalWalkMetres) || 0) + (Number(bus.totalWalkMetres) || 0),
     legs: [...rail.legs, ...busLegs(bus)],
-    note: 'Bus arrival timing after the rail transfer is not yet projected, so this path is topology-only and is not ranked.',
+    note: 'No monitored future bus arrival is visible with enough margin after the rail transfer, so this path is not ranked.',
   };
+}
+
+function futureMonitoredBusArrival(candidate, readyAtStopMinutes, transferBufferMinutes = RAIL_TO_BUS_TRANSFER_BUFFER_MINUTES) {
+  const leg = candidate?.legs?.[0];
+  const arrivals = Array.isArray(leg?.arrivals) ? leg.arrivals : Array.isArray(candidate?.arrivals) ? candidate.arrivals : [];
+  const monitored = Array.isArray(leg?.monitored) ? leg.monitored : Array.isArray(candidate?.monitored) ? candidate.monitored : [];
+  const threshold = Number(readyAtStopMinutes) + Number(transferBufferMinutes);
+  for (let index = 0; index < arrivals.length; index += 1) {
+    if (monitored[index] === true && Number.isFinite(arrivals[index]) && arrivals[index] >= threshold) {
+      return arrivals[index];
+    }
+  }
+  return null;
+}
+
+function composeEstimatedRailBus(rail, bus, station, rideTiming, boardingInMinutes) {
+  if (!rail || !bus || !rideTiming || !Number.isFinite(boardingInMinutes)) return null;
+  const boardWalkMinutes = walkMinutes(bus.board?.distanceMetres);
+  const destinationWalkMinutes = walkMinutes(bus.alight?.distanceMetres);
+  const estimatedTotalMinutes = boardingInMinutes + rideTiming.estimatedRideMinutes + destinationWalkMinutes;
+  const minTotalMinutes = boardingInMinutes + rideTiming.minRideMinutes + destinationWalkMinutes;
+  const maxTotalMinutes = boardingInMinutes + rideTiming.maxRideMinutes + destinationWalkMinutes;
+  const totalSpreadMinutes = maxTotalMinutes - minTotalMinutes;
+  const rankable = rideTiming.reliable && totalSpreadMinutes <= MAX_INTERMODAL_TIMING_SPREAD_MINUTES;
+  const legs = busLegs(bus);
+  if (legs[0]) {
+    legs[0].estimatedRideMinutes = Math.round(rideTiming.estimatedRideMinutes * 10) / 10;
+    legs[0].estimatedRideRangeMinutes = [
+      Math.round(rideTiming.minRideMinutes * 10) / 10,
+      Math.round(rideTiming.maxRideMinutes * 10) / 10,
+    ];
+    legs[0].timingConfidence = 'estimated';
+    legs[0].selectedBoardingInMinutes = boardingInMinutes;
+  }
+  return {
+    kind: 'rail-bus',
+    timingStatus: 'estimated',
+    timingConfidence: rankable && totalSpreadMinutes <= 10 ? 'medium' : 'low',
+    rankable,
+    connectorStation: { id: station.id, name: station.name, lat: station.lat, lng: station.lng },
+    transfers: rail.transfers + 1,
+    totalWalkMetres: (Number(rail.totalWalkMetres) || 0) + (Number(bus.totalWalkMetres) || 0),
+    estimatedTotalMinutes: Math.round(estimatedTotalMinutes),
+    estimatedTotalRangeMinutes: [Math.floor(minTotalMinutes), Math.ceil(maxTotalMinutes)],
+    busTiming: {
+      source: 'LTA monitored future arrival plus route distance and stop count heuristic',
+      railArrivalInMinutes: rail.estimatedTotalMinutes,
+      stationWalkMinutes: Math.round(boardWalkMinutes * 10) / 10,
+      boardingInMinutes,
+      transferMarginMinutes: Math.round((boardingInMinutes - rail.estimatedTotalMinutes - boardWalkMinutes) * 10) / 10,
+      estimatedRideMinutes: Math.round(rideTiming.estimatedRideMinutes * 10) / 10,
+      rideRangeMinutes: [Math.round(rideTiming.minRideMinutes * 10) / 10, Math.round(rideTiming.maxRideMinutes * 10) / 10],
+      destinationWalkMinutes: Math.round(destinationWalkMinutes * 10) / 10,
+    },
+    legs: [...rail.legs, ...legs],
+    note: rankable
+      ? 'The transfer bus uses a currently monitored future LTA arrival with a safety margin; bus ride time is conservatively estimated.'
+      : 'The future bus is visible, but the bus ride-time estimate is too uncertain to rank confidently.',
+  };
+}
+
+function timedRailBusCandidate(rail, bus, station) {
+  if (!rail || !bus || Number(bus.transfers) !== 0 || !Array.isArray(bus.legs) || bus.legs.length !== 1) return null;
+  if (!Number.isFinite(rail.estimatedTotalMinutes)) return null;
+  const rideTiming = estimateBusRideWindow(bus);
+  if (!rideTiming?.reliable) return null;
+  const readyAtStopMinutes = rail.estimatedTotalMinutes + walkMinutes(bus.board?.distanceMetres);
+  const boardingInMinutes = futureMonitoredBusArrival(bus, readyAtStopMinutes);
+  if (!Number.isFinite(boardingInMinutes)) return null;
+  return composeEstimatedRailBus(rail, bus, station, rideTiming, boardingInMinutes);
 }
 
 function timedBusRailCandidate(schedule, end, clock, station, bus) {
@@ -248,8 +328,15 @@ module.exports = async function handler(req, res) {
     if (destinationConnector && destinationConnector.distanceMetres > CONNECTOR_MIN_DISTANCE_METRES) {
       const railBeforeBus = trainSchedule.railJourney(schedule, start, railStationPoint(destinationConnector), { clock, endStations: exactStation(destinationConnector) });
       const connectorBusResult = await runBusRoute(railStationPoint(destinationConnector), end).catch(() => null);
-      const connectorBus = usableBusCandidate(connectorBusResult?.body);
-      const combined = composeRailBus(railBeforeBus, connectorBus, destinationConnector);
+      const payload = connectorBusResult?.body;
+      const connectorBus = usableBusCandidate(payload);
+      const timedCandidates = directLiveBusCandidates(payload)
+        .map((candidate) => timedRailBusCandidate(railBeforeBus, candidate, destinationConnector))
+        .filter(Boolean)
+        .sort((left, right) => Number(right.rankable) - Number(left.rankable)
+          || (left.estimatedTotalMinutes ?? Number.POSITIVE_INFINITY) - (right.estimatedTotalMinutes ?? Number.POSITIVE_INFINITY)
+          || left.totalWalkMetres - right.totalWalkMetres);
+      const combined = timedCandidates[0] || composeRailBus(railBeforeBus, connectorBus, destinationConnector);
       if (combined) intermodal.push(combined);
     }
   }
@@ -260,7 +347,7 @@ module.exports = async function handler(req, res) {
   }
 
   return res.status(200).json({
-    engine: 'lta-realtime-multimodal-v2',
+    engine: 'lta-realtime-multimodal-v3',
     scope: 'live-bus-plus-scheduled-rail',
     bus: busOk ? busResult.body : { candidates: [], error: busResult.body?.error || 'Bus routing unavailable.' },
     rail: rail ? { candidate: rail, source: 'LTA GTFS Schedule (Train)' } : { candidate: null, reason: scheduleResult.error ? 'Train schedule unavailable.' : 'No scheduled rail journey connects nearby stations at this time.' },
@@ -269,7 +356,7 @@ module.exports = async function handler(req, res) {
       'Rail routing uses the official LTA GTFS Schedule and supports scheduled MRT/LRT line transfers.',
       'Bus-only routing continues to use LTA BusRoutes and live BusArrival data.',
       'Direct live bus-to-rail paths may be time-estimated when the LTA distance/stop-count uncertainty stays bounded; bus-transfer-to-rail paths remain unranked.',
-      'Rail-to-bus paths remain topology-only because future bus arrival timing is not projected yet.',
+      'Rail-to-bus paths may be time-estimated only when a monitored future LTA bus arrival remains catchable after the scheduled rail transfer with a safety margin.',
       'Walking access and egress currently use straight-line distance.',
     ],
     updatedAt: new Date().toISOString(),
@@ -281,12 +368,16 @@ module.exports._test = {
   usableBusCandidate,
   directLiveBusCandidates,
   walkMinutes,
+  estimateBusRideWindow,
   estimateDirectBusTiming,
   advanceClock,
   busLegs,
   composeBusRail,
   composeEstimatedBusRail,
   composeRailBus,
+  futureMonitoredBusArrival,
+  composeEstimatedRailBus,
+  timedRailBusCandidate,
   timedBusRailCandidate,
   sortConnectorOptions,
 };
