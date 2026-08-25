@@ -18,6 +18,22 @@ function timeoutValue(value) {
     : DEFAULT_TIMEOUT_MS;
 }
 
+function createTimeoutSignal(timeoutMs = DEFAULT_TIMEOUT_MS) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutValue(timeoutMs));
+  timer.unref?.();
+
+  return {
+    signal: controller.signal,
+    didTimeout: () => timedOut,
+    cancel: () => clearTimeout(timer),
+  };
+}
+
 async function fetchWithTimeout(url, options = {}, { service = 'upstream', timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const controller = new AbortController();
   const parentSignal = options.signal;
@@ -141,6 +157,7 @@ function safeUpstreamFailure(error) {
 module.exports = {
   DEFAULT_TIMEOUT_MS,
   UpstreamError,
+  createTimeoutSignal,
   fetchWithTimeout,
   fetchJson,
   fetchBytes,

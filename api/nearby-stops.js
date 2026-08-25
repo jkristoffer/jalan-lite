@@ -1,10 +1,16 @@
 
-const { fetchJson, safeUpstreamFailure } = require('./_upstream');
+const {
+  UpstreamError,
+  createTimeoutSignal,
+  fetchJson,
+  safeUpstreamFailure,
+} = require('./_upstream');
 
 const LTA_URL = 'https://datamall2.mytransport.sg/ltaodataservice/BusStops';
 const PAGE_SIZE = 500;
 const MAX_PAGES = 20;
 const CACHE_MS = 12 * 60 * 60 * 1000;
+const CACHE_LOAD_TIMEOUT_MS = 10000;
 
 let cachedStops = null;
 let cachedAt = 0;
@@ -34,24 +40,24 @@ function distanceMetres(lat1, lon1, lat2, lon2) {
   return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function fetchPage(apiKey, page) {
+async function fetchPage(apiKey, page, signal) {
   const url = new URL(LTA_URL);
   url.searchParams.set('$skip', String(page * PAGE_SIZE));
   const { data } = await fetchJson(
     url,
-    { headers: { AccountKey: apiKey, Accept: 'application/json' } },
+    { headers: { AccountKey: apiKey, Accept: 'application/json' }, signal },
     { service: 'LTA BusStops', validate: isBusStopsPayload },
   );
   return data.value;
 }
 
-async function buildStopCache(apiKey) {
+async function buildStopCache(apiKey, signal) {
   const all = [];
 
   for (let page = 0; page < MAX_PAGES; page += 2) {
     const [first, second] = await Promise.allSettled([
-      fetchPage(apiKey, page),
-      page + 1 < MAX_PAGES ? fetchPage(apiKey, page + 1) : Promise.resolve([]),
+      fetchPage(apiKey, page, signal),
+      page + 1 < MAX_PAGES ? fetchPage(apiKey, page + 1, signal) : Promise.resolve([]),
     ]);
 
     if (first.status === 'rejected') throw first.reason;
@@ -68,12 +74,25 @@ async function buildStopCache(apiKey) {
   return cachedStops;
 }
 
-async function loadStops(apiKey) {
+async function loadStops(apiKey, timeoutMs = CACHE_LOAD_TIMEOUT_MS) {
   if (cachedStops && Date.now() - cachedAt < CACHE_MS) return cachedStops;
   if (!loadingStops) {
-    loadingStops = buildStopCache(apiKey).finally(() => {
-      loadingStops = null;
-    });
+    const deadline = createTimeoutSignal(timeoutMs);
+    loadingStops = buildStopCache(apiKey, deadline.signal)
+      .catch((error) => {
+        if (deadline.didTimeout()) {
+          throw new UpstreamError('LTA BusStops cache loading timed out.', {
+            code: 'UPSTREAM_TIMEOUT',
+            service: 'LTA BusStops',
+            cause: error,
+          });
+        }
+        throw error;
+      })
+      .finally(() => {
+        deadline.cancel();
+        loadingStops = null;
+      });
   }
   return loadingStops;
 }
@@ -117,4 +136,13 @@ module.exports = async function handler(req, res) {
   }
 };
 
-module.exports._test = { isBusStopsPayload };
+module.exports._test = {
+  isBusStopsPayload,
+  buildStopCache,
+  loadStops,
+  resetCache() {
+    cachedStops = null;
+    cachedAt = 0;
+    loadingStops = null;
+  },
+};

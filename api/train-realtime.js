@@ -1,10 +1,23 @@
 const { inflateRawSync, gunzipSync } = require('node:zlib');
 const { fetchBytes, safeUpstreamFailure } = require('./_upstream');
 
-const TRIP_UPDATES_URL = 'https://datamall.lta.gov.sg/content/dam/datamall/datasets/PublicTransportRelated/GTFSRealtimeTrainTripUpdates.zip';
-const SERVICE_ALERTS_URL = 'https://datamall.lta.gov.sg/content/dam/datamall/datasets/PublicTransportRelated/GTFSRealTimeTrainServiceAlerts.zip';
+const TRIP_UPDATES_URL = 'https://datamall2.mytransport.sg/ltaodataservice/GTFSRealtimeTrainTripUpdates';
+const SERVICE_ALERTS_URL = 'https://datamall2.mytransport.sg/ltaodataservice/GTFSRealTimeTrainServiceAlerts';
+const GTFS_LINK_HOST = 'dmprod-datasets.s3.ap-southeast-1.amazonaws.com';
+
+const ZIP_LOCAL_SIGNATURE = 0x04034b50;
+const ZIP_CENTRAL_SIGNATURE = 0x02014b50;
+const ZIP_DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 
 const textDecoder = new TextDecoder();
+
+function hasRange(bytes, offset, length) {
+  return Number.isInteger(offset)
+    && Number.isInteger(length)
+    && offset >= 0
+    && length >= 0
+    && offset + length <= bytes.length;
+}
 
 function uint32(bytes, offset) {
   return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
@@ -21,43 +34,140 @@ function findSignature(bytes, signature, start = 0) {
   return -1;
 }
 
-function unzipFirst(bytes) {
-  if (uint32(bytes, 0) !== 0x04034b50) return bytes;
+function findCentralEntry(bytes, name, localOffset) {
+  let cursor = 0;
+  while (cursor <= bytes.length - 46) {
+    const central = findSignature(bytes, ZIP_CENTRAL_SIGNATURE, cursor);
+    if (central < 0 || !hasRange(bytes, central, 46)) return -1;
+    const nameLength = uint16(bytes, central + 28);
+    const extraLength = uint16(bytes, central + 30);
+    const commentLength = uint16(bytes, central + 32);
+    if (!hasRange(bytes, central + 46, nameLength + extraLength + commentLength)) return -1;
+    const entryName = textDecoder.decode(bytes.slice(central + 46, central + 46 + nameLength));
+    if (entryName === name && uint32(bytes, central + 42) === localOffset) return central;
+    cursor = central + 46 + nameLength + extraLength + commentLength;
+  }
+  return -1;
+}
 
+function unzipEntries(bytes) {
+  if (!(bytes instanceof Uint8Array) || !hasRange(bytes, 0, 4) || uint32(bytes, 0) !== ZIP_LOCAL_SIGNATURE) {
+    return [];
+  }
+
+  const entries = [];
   let cursor = 0;
   while (cursor <= bytes.length - 30) {
-    if (uint32(bytes, cursor) !== 0x04034b50) break;
+    if (!hasRange(bytes, cursor, 30) || uint32(bytes, cursor) !== ZIP_LOCAL_SIGNATURE) break;
     const flags = uint16(bytes, cursor + 6);
     const method = uint16(bytes, cursor + 8);
     let compressedSize = uint32(bytes, cursor + 18);
     const nameLength = uint16(bytes, cursor + 26);
     const extraLength = uint16(bytes, cursor + 28);
+    if (flags & 0x01) throw new Error('Encrypted LTA GTFS-Realtime ZIP entries are unsupported.');
+    if (!hasRange(bytes, cursor + 30, nameLength + extraLength)) {
+      throw new Error('Invalid LTA GTFS-Realtime ZIP entry.');
+    }
     const name = textDecoder.decode(bytes.slice(cursor + 30, cursor + 30 + nameLength));
     const dataStart = cursor + 30 + nameLength + extraLength;
 
     if ((flags & 0x08) && !compressedSize) {
-      const central = findSignature(bytes, 0x02014b50, dataStart);
-      if (central >= 0) compressedSize = uint32(bytes, central + 20);
+      const central = findCentralEntry(bytes, name, cursor);
+      if (central >= 0 && hasRange(bytes, central + 20, 4)) compressedSize = uint32(bytes, central + 20);
+    }
+    if (!hasRange(bytes, dataStart, compressedSize)) {
+      throw new Error('Invalid LTA GTFS-Realtime ZIP payload.');
     }
 
-    const isFeedEntry = /\.(?:pb|bin)(?:\.gz)?$/i.test(name) || /trip.*update|service.*alert/i.test(name);
-    if (!name.endsWith('/') && isFeedEntry && compressedSize >= 0 && dataStart + compressedSize <= bytes.length) {
+    if (!name.endsWith('/')) {
       const payload = bytes.slice(dataStart, dataStart + compressedSize);
-      const decoded = method === 0 ? payload : method === 8 ? new Uint8Array(inflateRawSync(payload)) : null;
-      if (decoded && /\.gz$/i.test(name)) return new Uint8Array(gunzipSync(decoded));
-      if (decoded) return decoded;
+      let decoded;
+      try {
+        decoded = method === 0
+          ? payload
+          : method === 8
+            ? new Uint8Array(inflateRawSync(payload))
+            : null;
+        if (!decoded) throw new Error('Unsupported ZIP compression method.');
+        if (/\.gz$/i.test(name)) decoded = new Uint8Array(gunzipSync(decoded));
+      } catch (_error) {
+        throw new Error('Unable to decode the LTA GTFS-Realtime ZIP entry.');
+      }
+      entries.push({ name, bytes: decoded });
     }
 
-    const nextEntry = dataStart + compressedSize;
-    if (nextEntry > cursor && nextEntry <= bytes.length) cursor = nextEntry;
-    else {
-      const nextHeader = findSignature(bytes, 0x04034b50, dataStart);
-      if (nextHeader < 0) break;
-      cursor = nextHeader;
+    let nextEntry = dataStart + compressedSize;
+    if (flags & 0x08) {
+      if (hasRange(bytes, nextEntry, 4) && uint32(bytes, nextEntry) === ZIP_DATA_DESCRIPTOR_SIGNATURE) {
+        nextEntry += 16;
+      } else {
+        nextEntry += 12;
+      }
     }
+    if (!hasRange(bytes, nextEntry, 4) || uint32(bytes, nextEntry) !== ZIP_LOCAL_SIGNATURE) {
+      const nextHeader = findSignature(bytes, ZIP_LOCAL_SIGNATURE, nextEntry);
+      if (nextHeader < 0) break;
+      nextEntry = nextHeader;
+    }
+    if (nextEntry <= cursor) throw new Error('Invalid LTA GTFS-Realtime ZIP structure.');
+    cursor = nextEntry;
   }
 
+  return entries;
+}
+
+function unzipFirst(bytes) {
+  const entries = unzipEntries(bytes);
+  if (!entries.length) return bytes;
+
+  const entry = entries.find(({ name }) => /\.(?:pb|bin)(?:\.gz)?$/i.test(name));
+  if (entry) return entry.bytes;
+
   throw new Error('Unable to read the LTA GTFS-Realtime ZIP feed.');
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseIndexDocument(bytes) {
+  let data;
+  try {
+    data = JSON.parse(textDecoder.decode(bytes));
+  } catch (_error) {
+    throw new Error('Invalid LTA GTFS-Realtime index JSON.');
+  }
+
+  if (!isRecord(data) || !Array.isArray(data.value) || !data.value.length) {
+    throw new Error('Invalid LTA GTFS-Realtime index shape.');
+  }
+
+  const item = data.value.find((candidate) => isRecord(candidate) && typeof candidate.link === 'string' && typeof candidate.timestamp === 'string');
+  if (!item || !Number.isFinite(Date.parse(item.timestamp))) {
+    throw new Error('LTA GTFS-Realtime index is missing required fields.');
+  }
+
+  let link;
+  try {
+    link = new URL(item.link);
+  } catch (_error) {
+    throw new Error('LTA GTFS-Realtime index contains an invalid feed link.');
+  }
+  if (link.protocol !== 'https:' || link.hostname !== GTFS_LINK_HOST || !/\.pb$/i.test(link.pathname)) {
+    throw new Error('LTA GTFS-Realtime index contains an invalid feed link.');
+  }
+
+  return { link: link.toString(), timestamp: Date.parse(item.timestamp) };
+}
+
+function parseFeedIndex(bytes) {
+  const entries = unzipEntries(bytes);
+  const jsonEntry = entries.find(({ name }) => /\.json$/i.test(name));
+  if (jsonEntry) return parseIndexDocument(jsonEntry.bytes);
+  if (!entries.length && bytes instanceof Uint8Array && /^\s*\{/.test(textDecoder.decode(bytes))) {
+    return parseIndexDocument(bytes);
+  }
+  throw new Error('Unable to read the LTA GTFS-Realtime index.');
 }
 
 function readVarint(bytes, offset) {
@@ -279,12 +389,23 @@ function alertMatch(alert, routes, stops) {
 }
 
 async function fetchFeed(url, apiKey) {
-  const { bytes } = await fetchBytes(
+  const { bytes: sourceBytes } = await fetchBytes(
     url,
-    { headers: { AccountKey: apiKey, Accept: 'application/zip, application/octet-stream' } },
-    { service: 'LTA GTFS-Realtime' },
+    { headers: { AccountKey: apiKey, Accept: 'application/json, application/zip, application/octet-stream' } },
+    { service: 'LTA GTFS-Realtime index' },
   );
-  return bytes;
+
+  const entries = unzipEntries(sourceBytes);
+  const directFeed = entries.find(({ name }) => /\.(?:pb|bin)(?:\.gz)?$/i.test(name));
+  if (directFeed) return { bytes: directFeed.bytes, timestamp: 0 };
+
+  const index = parseFeedIndex(sourceBytes);
+  const { bytes } = await fetchBytes(
+    index.link,
+    { headers: { Accept: 'application/octet-stream' } },
+    { service: 'LTA GTFS-Realtime feed' },
+  );
+  return { bytes, timestamp: index.timestamp };
 }
 
 module.exports = async function handler(req, res) {
@@ -295,22 +416,23 @@ module.exports = async function handler(req, res) {
     const requestUrl = new URL(req.url, 'https://jalan.local');
     const routes = csv(requestUrl.searchParams.get('routes'));
     const stops = csv(requestUrl.searchParams.get('stops'));
-    const tripBytes = await fetchFeed(TRIP_UPDATES_URL, apiKey);
-    const tripResult = parseFeed(unzipFirst(tripBytes), 'trips');
+    const tripFeed = await fetchFeed(TRIP_UPDATES_URL, apiKey);
+    const tripResult = parseFeed(tripFeed.bytes, 'trips');
     let alertResult = { timestamp: 0, entities: [], available: false };
+    let alertFeed = { timestamp: 0 };
     try {
-      const alertBytes = await fetchFeed(SERVICE_ALERTS_URL, apiKey);
-      alertResult = { ...parseFeed(unzipFirst(alertBytes), 'alerts'), available: true };
+      alertFeed = await fetchFeed(SERVICE_ALERTS_URL, apiKey);
+      alertResult = { ...parseFeed(alertFeed.bytes, 'alerts'), available: true };
     } catch (error) {
       safeUpstreamFailure(error);
     }
     const updates = tripResult.entities.filter((entity) => entity.tripUpdate && !entity.deleted && queryMatch(entity.tripUpdate, routes, stops)).map((entity) => ({ id: entity.id, ...entity.tripUpdate }));
     const alerts = alertResult.entities.filter((entity) => entity.alert && !entity.deleted && alertMatch(entity.alert, routes, stops)).map((entity) => ({ id: entity.id, ...entity.alert }));
-    return res.status(200).json({ source: 'LTA GTFS-Realtime', feedTimestamp: tripResult.timestamp || alertResult.timestamp || 0, alertsAvailable: alertResult.available, updatedAt: new Date().toISOString(), updates: updates.slice(0, 800), alerts: alerts.slice(0, 100) });
+    return res.status(200).json({ source: 'LTA GTFS-Realtime', feedTimestamp: tripResult.timestamp || tripFeed.timestamp || alertResult.timestamp || alertFeed.timestamp || 0, alertsAvailable: alertResult.available, updatedAt: new Date().toISOString(), updates: updates.slice(0, 800), alerts: alerts.slice(0, 100) });
   } catch (error) {
     safeUpstreamFailure(error);
     return res.status(502).json({ error: 'LTA train realtime is temporarily unavailable.' });
   }
 };
 
-module.exports._test = { parseFeed, unzipFirst, fetchFeed };
+module.exports._test = { parseFeed, unzipEntries, unzipFirst, parseFeedIndex, fetchFeed };
