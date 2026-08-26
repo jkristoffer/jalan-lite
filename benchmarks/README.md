@@ -66,6 +66,17 @@ node benchmarks/compare-lta-fixture.js \
 
 The comparator emits automation-friendly JSON by default; pass `--text` for a concise human-readable report (`--json` is also accepted). It takes the exact `requestedDate`, `scenarioIds`, and `departureTimes` matrix from the snapshot, so it does not accept replay date/time/scenario overrides. It fails on missing or invalid files, invalid capture timestamps, missing required snapshot metadata, or any missing/extra matrix sample. It never contacts LTA, OneMap, or the production app. Each sample includes replay/snapshot status and best-path minutes, source, confidence, rankability, and services, the signed replay-minus-snapshot minute delta, and whether applying the snapshot's OneMap baseline changes the LTA outcome. Aggregates include matrix and ranked-path coverage, status/path/source/rankability/exact-minute matches, median minute delta, and the fixture/snapshot capture timestamps with their signed observation gap.
 
+Aggregate several comparison reports into an offline stability history:
+
+```sh
+node benchmarks/compare-lta-history.js \
+  --comparison /tmp/lta-fixture-comparison-window-a.json \
+  --comparison /tmp/lta-fixture-comparison-window-b.json \
+  --comparison /tmp/lta-fixture-comparison-window-c.json
+```
+
+The stability advisory requires at least 3 comparable reports, complete matching matrices, snapshot/fixture gaps of at most 5 minutes, at least 90% replay path-identity matches, at most 25% scheduled-estimate fallback, and zero OneMap outcome changes. Reports outside the gap are surfaced but excluded from stability aggregates. This is an evidence gate only: it does not promote or alter the user-facing router or the compact benchmark promotion gate.
+
 By default, static bus rows are limited to the fixed benchmark journeys and their one-transfer neighborhoods; `--full-static` keeps the entire static feed. The fixture contains raw BusStops, BusRoutes, BusServices, selected BusArrival payloads, and the parsed GTFS train schedule. It never stores API credentials. Use `--force` only when intentionally replacing an existing file.
 
 Each sample sends the same `requestedClock` timestamp to both endpoints. OneMap and scheduled LTA rail use that requested Singapore clock. Production LTA bus arrivals remain live-at-observation-time, so the report records `ltaObservationTime`; timing deltas from the live matrix are still coverage and confidence evidence, not historical ETA accuracy.
