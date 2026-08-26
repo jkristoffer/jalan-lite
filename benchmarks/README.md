@@ -56,6 +56,16 @@ node benchmarks/replay-lta-fixture.js \
 
 Raw replay normalizes live BusArrival timestamps against the fixture `capturedAt`; `--date` and `--times` continue to control scheduled rail time.
 
+Compare that offline replay with a compact routing snapshot:
+
+```sh
+node benchmarks/compare-lta-fixture.js \
+  --fixture benchmarks/fixtures/lta-network-2026-08-25.json.gz \
+  --snapshot benchmarks/snapshots/routing-2026-08-25.json
+```
+
+The comparator emits automation-friendly JSON by default; pass `--text` for a concise human-readable report (`--json` is also accepted). It takes the exact `requestedDate`, `scenarioIds`, and `departureTimes` matrix from the snapshot, so it does not accept replay date/time/scenario overrides. It fails on missing or invalid files, invalid capture timestamps, missing required snapshot metadata, or any missing/extra matrix sample. It never contacts LTA, OneMap, or the production app. Each sample includes replay/snapshot status and best-path minutes, source, confidence, rankability, and services, the signed replay-minus-snapshot minute delta, and whether applying the snapshot's OneMap baseline changes the LTA outcome. Aggregates include matrix and ranked-path coverage, status/path/source/rankability/exact-minute matches, median minute delta, and the fixture/snapshot capture timestamps with their signed observation gap.
+
 By default, static bus rows are limited to the fixed benchmark journeys and their one-transfer neighborhoods; `--full-static` keeps the entire static feed. The fixture contains raw BusStops, BusRoutes, BusServices, selected BusArrival payloads, and the parsed GTFS train schedule. It never stores API credentials. Use `--force` only when intentionally replacing an existing file.
 
 Each sample sends the same `requestedClock` timestamp to both endpoints. OneMap and scheduled LTA rail use that requested Singapore clock. Production LTA bus arrivals remain live-at-observation-time, so the report records `ltaObservationTime`; timing deltas from the live matrix are still coverage and confidence evidence, not historical ETA accuracy.
