@@ -82,6 +82,85 @@ test('deduplicates equivalent transfer service pairs with different transfer sto
   assert.equal(ranked.length, 1);
 });
 
+test('rechecks bounded endpoint discovery when a useful stop is outside the primary six', () => {
+  const start = { lat: 1.3, lng: 103.8 };
+  const end = { lat: 1.31, lng: 103.81 };
+  const nearbyDistractors = Array.from({ length: 6 }, (_, index) => ({
+    BusStopCode: String(71000 + index),
+    Latitude: String(start.lat + (index + 1) * 0.0002),
+    Longitude: String(start.lng),
+  }));
+  const usefulOrigin = {
+    BusStopCode: '70007',
+    Latitude: String(start.lat + 0.0045),
+    Longitude: String(start.lng),
+  };
+  const usefulDestination = {
+    BusStopCode: '80001',
+    Latitude: String(end.lat),
+    Longitude: String(end.lng),
+  };
+  const discovery = router._test.discoverCandidates(
+    [...nearbyDistractors, usefulOrigin, usefulDestination],
+    [
+      { ServiceNo: '42', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '70007', Distance: 0 },
+      { ServiceNo: '42', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '80001', Distance: 6 },
+    ],
+    start,
+    end,
+  );
+
+  assert.equal(discovery.rechecked, true);
+  assert.equal(discovery.primary.originStops.some((stop) => stop.stopCode === '70007'), false);
+  assert.equal(discovery.originStops.some((stop) => stop.stopCode === '70007'), true);
+  assert.equal(discovery.candidates[0].board.stopCode, '70007');
+  assert.equal(discovery.candidates[0].alight.stopCode, '80001');
+});
+
+test('rechecks when the best primary candidate exceeds the straight-line endpoint-distance proxy threshold', () => {
+  const start = { lat: 1.3, lng: 103.8 };
+  const end = { lat: 1.31, lng: 103.81 };
+  const discovery = router._test.discoverCandidates(
+    [
+      { BusStopCode: '71007', Latitude: String(start.lat + 0.0045), Longitude: String(start.lng) },
+      { BusStopCode: '81001', Latitude: String(end.lat), Longitude: String(end.lng) },
+    ],
+    [
+      { ServiceNo: '52', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '71007', Distance: 0 },
+      { ServiceNo: '52', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '81001', Distance: 6 },
+    ],
+    start,
+    end,
+  );
+
+  assert.ok(discovery.primary.originStops[0].distanceMetres > 450);
+  assert.equal(discovery.rechecked, true);
+  assert.ok(discovery.expanded);
+  assert.equal(discovery.candidates[0].board.stopCode, '71007');
+});
+
+test('does not expand ordinary primary endpoint discovery for a short route', () => {
+  const start = { lat: 1.3, lng: 103.8 };
+  const end = { lat: 1.31, lng: 103.81 };
+  const discovery = router._test.discoverCandidates(
+    [
+      { BusStopCode: '65029', Latitude: String(start.lat + 0.0003), Longitude: String(start.lng) },
+      { BusStopCode: '70289', Latitude: String(end.lat), Longitude: String(end.lng + 0.0003) },
+    ],
+    [
+      { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '65029', Distance: 0 },
+      { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '70289', Distance: 8 },
+    ],
+    start,
+    end,
+  );
+
+  assert.equal(router._test.shouldRecheckCandidateDiscovery(discovery.primary), false);
+  assert.equal(discovery.rechecked, false);
+  assert.equal(discovery.expanded, undefined);
+  assert.equal(discovery.candidates[0].board.stopCode, '65029');
+});
+
 test('attaches live arrival state for the second bus at the transfer stop', async () => {
   const originalFetch = global.fetch;
   global.fetch = async () => ({

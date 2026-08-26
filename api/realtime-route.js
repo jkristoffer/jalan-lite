@@ -11,6 +11,10 @@ const ROUTE_CACHE_MS = 12 * 60 * 60 * 1000;
 const ROUTE_LOAD_TIMEOUT_MS = 15000;
 const SEARCH_RADIUS_METRES = 600;
 const MAX_NEARBY_STOPS = 6;
+const RECHECK_SEARCH_RADIUS_METRES = 1200;
+const RECHECK_MAX_NEARBY_STOPS = 18;
+const RECHECK_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES = 450;
+// The threshold uses straight-line endpoint distance, not a measured pedestrian route.
 const MAX_STATIC_CANDIDATES = 24;
 const MAX_TRANSFER_CANDIDATES = 72;
 const MAX_TRANSFER_LIVE_CHECKS = 12;
@@ -337,6 +341,74 @@ function oneTransferCandidates(routeRows, originStops, destinationStops) {
     .slice(0, MAX_TRANSFER_CANDIDATES);
 }
 
+function compareCandidateDiscovery(left, right) {
+  const leftWalk = Number.isFinite(Number(left.totalWalkMetres))
+    ? Number(left.totalWalkMetres)
+    : Number.POSITIVE_INFINITY;
+  const rightWalk = Number.isFinite(Number(right.totalWalkMetres))
+    ? Number(right.totalWalkMetres)
+    : Number.POSITIVE_INFINITY;
+  const leftDistance = Number.isFinite(Number(left.routeDistanceKm))
+    ? Number(left.routeDistanceKm)
+    : Number.POSITIVE_INFINITY;
+  const rightDistance = Number.isFinite(Number(right.routeDistanceKm))
+    ? Number(right.routeDistanceKm)
+    : Number.POSITIVE_INFINITY;
+  const leftRideStops = Number.isFinite(Number(left.rideStops))
+    ? Number(left.rideStops)
+    : Number.POSITIVE_INFINITY;
+  const rightRideStops = Number.isFinite(Number(right.rideStops))
+    ? Number(right.rideStops)
+    : Number.POSITIVE_INFINITY;
+  return (Number(left.transfers) || 0) - (Number(right.transfers) || 0)
+    || leftWalk - rightWalk
+    || leftDistance - rightDistance
+    || leftRideStops - rightRideStops;
+}
+
+function shouldRecheckCandidateDiscovery({ originStops = [], destinationStops = [], candidates = [] } = {}) {
+  if (!originStops.length || !destinationStops.length || !candidates.length) return true;
+  const best = [...candidates].sort(compareCandidateDiscovery)[0];
+  return [best.board?.distanceMetres, best.alight?.distanceMetres]
+    .some((distance) => Number.isFinite(Number(distance))
+      && Number(distance) > RECHECK_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES);
+}
+
+function discoverCandidatePass(stopRows, routeRows, start, end, radius, limit) {
+  const originStops = nearby(stopRows, start, radius, limit);
+  const destinationStops = nearby(stopRows, end, radius, limit);
+  const candidates = [
+    ...directCandidates(routeRows, originStops, destinationStops),
+    ...oneTransferCandidates(routeRows, originStops, destinationStops),
+  ];
+  return { originStops, destinationStops, candidates };
+}
+
+function discoverCandidates(stopRows, routeRows, start, end) {
+  const primary = discoverCandidatePass(
+    stopRows,
+    routeRows,
+    start,
+    end,
+    SEARCH_RADIUS_METRES,
+    MAX_NEARBY_STOPS,
+  );
+  if (!shouldRecheckCandidateDiscovery(primary)) {
+    return { ...primary, primary, rechecked: false };
+  }
+
+  const expanded = discoverCandidatePass(
+    stopRows,
+    routeRows,
+    start,
+    end,
+    RECHECK_SEARCH_RADIUS_METRES,
+    RECHECK_MAX_NEARBY_STOPS,
+  );
+  const selected = expanded.candidates.length || !primary.candidates.length ? expanded : primary;
+  return { ...selected, primary, expanded, rechecked: true };
+}
+
 function minutesUntil(value, now = Date.now()) {
   if (!value) return null;
   const target = new Date(value).getTime();
@@ -544,8 +616,8 @@ module.exports = async function handler(req, res) {
       typeof benchmark.stopsProvider === 'function' ? benchmark.stopsProvider({ apiKey }) : nearbyStopsApi._shared.loadStops(apiKey),
       typeof benchmark.routesProvider === 'function' ? benchmark.routesProvider({ apiKey }) : loadRoutes(apiKey),
     ]);
-    const originStops = nearby(stopRows, start);
-    const destinationStops = nearby(stopRows, end);
+    const discovery = discoverCandidates(stopRows, routeRows, start, end);
+    const { originStops, destinationStops, candidates } = discovery;
     if (!originStops.length || !destinationStops.length) {
       return res.status(200).json({
         engine: 'lta-realtime-bus-v2',
@@ -555,15 +627,16 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const direct = directCandidates(routeRows, originStops, destinationStops);
-    const transfers = oneTransferCandidates(routeRows, originStops, destinationStops);
-    const candidates = [...direct, ...transfers];
     if (!candidates.length) {
+      const hadPrimaryEndpointCoverage = discovery.primary.originStops.length > 0
+        && discovery.primary.destinationStops.length > 0;
       return res.status(200).json({
         engine: 'lta-realtime-bus-v2',
         scope: 'bus-up-to-one-transfer',
         candidates: [],
-        reason: 'No direct or one-transfer bus journey connects the nearby origin and destination stops.',
+        reason: hadPrimaryEndpointCoverage
+          ? 'No direct or one-transfer bus journey connects the nearby origin and destination stops.'
+          : 'No nearby LTA bus stops were found within 600 metres of one or both endpoints.',
       });
     }
 
@@ -621,6 +694,8 @@ module.exports._test = {
   parsePoint,
   directCandidates,
   oneTransferCandidates,
+  discoverCandidates,
+  shouldRecheckCandidateDiscovery,
   accessWalkMinutes,
   catchableArrival,
   fetchStopArrivals,
