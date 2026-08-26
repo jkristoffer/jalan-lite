@@ -54,7 +54,7 @@ node benchmarks/replay-lta-fixture.js \
   --date 2026-08-25
 ```
 
-Raw replay normalizes live BusArrival timestamps against the fixture `capturedAt`; `--date` and `--times` continue to control scheduled rail time.
+Raw replay normalizes each BusArrival payload against its optional per-stop `busArrivalCapturedAt` timestamp, falling back to the fixture `capturedAt` for older fixtures; `--date` and `--times` continue to control scheduled rail time.
 
 Compare that offline replay with a compact routing snapshot:
 

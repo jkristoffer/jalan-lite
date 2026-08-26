@@ -185,13 +185,18 @@ async function captureFixture({ apiKey = process.env.LTA_API_KEY, arrivalStops =
   });
   const capturedArrivalStops = normalizeStopCodes([...arrivalStops, ...discoveredArrivalStops]);
   const busArrivals = {};
-  for (const stopCode of capturedArrivalStops) busArrivals[stopCode] = await fetchArrivals(stopCode, apiKey);
+  const busArrivalCapturedAt = {};
+  for (const stopCode of capturedArrivalStops) {
+    busArrivals[stopCode] = await fetchArrivals(stopCode, apiKey);
+    busArrivalCapturedAt[stopCode] = new Date().toISOString();
+  }
   const result = fixture.createFixture({
     requestedDate,
     busStops: selected.busStops,
     busRoutes: selected.busRoutes,
     busServices: selected.busServices,
     busArrivals,
+    busArrivalCapturedAt,
     trainSchedule: parsedSchedule,
   });
   result.scope = {

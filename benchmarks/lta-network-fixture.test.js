@@ -58,6 +58,7 @@ function networkFixture(now) {
         }],
       },
     },
+    busArrivalCapturedAt: { '65029': new Date(now).toISOString() },
     trainSchedule: scheduleFixture(),
   });
 }
@@ -71,6 +72,7 @@ test('round-trips compressed source fixtures and exposes injectable providers', 
     fixture.writeFixture(filePath, saved);
     assert.equal(fs.readFileSync(filePath).readUInt16LE(0), 0x8b1f);
     const loaded = fixture.readFixture(filePath);
+    assert.equal(loaded.busArrivalCapturedAt['65029'], new Date(now).toISOString());
     const providers = fixture.createProviders(loaded);
     const arrivals = await providers.arrivalProvider({ stopCode: '65029', now });
     const schedule = await providers.scheduleProvider();
@@ -147,6 +149,7 @@ test('uses fixture capture time for live arrivals while requested time drives sc
   const capturedAt = '2026-08-25T09:36:29.315Z';
   const network = networkFixture(Date.parse(capturedAt));
   network.capturedAt = capturedAt;
+  delete network.busArrivalCapturedAt;
   const busResult = await fixtureReplay.runFixtureRoute(
     network,
     { start: { lat: 1.383486, lng: 103.900782 }, end: { lat: 1.335142, lng: 103.888389 } },
@@ -162,6 +165,26 @@ test('uses fixture capture time for live arrivals while requested time drives sc
     '08:00',
   );
   assert.equal(railResult.body.rail.candidate.legs[0].routeId, 'R1');
+});
+
+test('uses stop-specific capture time over a later provider clock', async () => {
+  const capturedAt = Date.parse('2026-08-25T08:00:00.000Z');
+  const network = networkFixture(capturedAt);
+  const providers = fixture.createProviders(network);
+  const arrivals = await providers.arrivalProvider({
+    stopCode: '65029',
+    now: capturedAt + 60 * 60000,
+  });
+  assert.deepEqual(arrivals.get('80').arrivals, [4, null, null]);
+});
+
+test('rejects invalid per-stop capture metadata instead of normalizing with NaN', () => {
+  const network = networkFixture(Date.parse('2026-08-25T08:00:00.000Z'));
+  network.busArrivalCapturedAt['65029'] = Date.parse('2026-08-25T08:00:00.000Z');
+  assert.throws(
+    () => fixture.validateFixture(network),
+    /busArrivalCapturedAt for stop 65029 must be a valid timestamp/,
+  );
 });
 
 test('requires a valid fixture capture timestamp for offline replay', () => {

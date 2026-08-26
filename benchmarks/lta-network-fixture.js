@@ -11,6 +11,14 @@ function isRecord(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function timestampMs(value) {
+  return typeof value === 'string' ? Date.parse(value) : NaN;
+}
+
+function isValidTimestamp(value) {
+  return Number.isFinite(timestampMs(value));
+}
+
 function cloneJson(value) {
   if (value === undefined) return null;
   return JSON.parse(JSON.stringify(value));
@@ -64,11 +72,17 @@ function validateFixture(fixture) {
     if (!Array.isArray(fixture[name])) throw new Error(`LTA network fixture ${name} must be an array.`);
   });
   if (!isRecord(fixture.busArrivals)) throw new Error('LTA network fixture busArrivals must be an object keyed by stop code.');
+  if (fixture.busArrivalCapturedAt !== undefined) {
+    if (!isRecord(fixture.busArrivalCapturedAt)) throw new Error('LTA network fixture busArrivalCapturedAt must be an object keyed by stop code.');
+    Object.entries(fixture.busArrivalCapturedAt).forEach(([stopCode, capturedAt]) => {
+      if (!isValidTimestamp(capturedAt)) throw new Error(`LTA network fixture busArrivalCapturedAt for stop ${stopCode} must be a valid timestamp.`);
+    });
+  }
   serializeTrainSchedule(fixture.trainSchedule);
   return fixture;
 }
 
-function createFixture({ capturedAt = new Date().toISOString(), requestedDate = null, busStops, busRoutes, busServices, busArrivals = {}, trainSchedule }) {
+function createFixture({ capturedAt = new Date().toISOString(), requestedDate = null, busStops, busRoutes, busServices, busArrivals = {}, busArrivalCapturedAt, trainSchedule }) {
   return validateFixture({
     kind: FIXTURE_KIND,
     version: FIXTURE_VERSION,
@@ -78,6 +92,7 @@ function createFixture({ capturedAt = new Date().toISOString(), requestedDate = 
     busRoutes: cloneJson(busRoutes),
     busServices: cloneJson(busServices),
     busArrivals: cloneJson(busArrivals),
+    ...(busArrivalCapturedAt === undefined ? {} : { busArrivalCapturedAt: cloneJson(busArrivalCapturedAt) }),
     trainSchedule: serializeTrainSchedule(trainSchedule),
   });
 }
@@ -95,7 +110,8 @@ function createProviders(fixture, { onMissingArrival } = {}) {
         throw new Error(`LTA network fixture is missing BusArrival data for stop ${key}.`);
       }
       const payload = validated.busArrivals[key];
-      return realtimeRoute.normalizeArrivalPayload(payload, now);
+      const capturedAt = validated.busArrivalCapturedAt?.[key] || validated.capturedAt;
+      return realtimeRoute.normalizeArrivalPayload(payload, timestampMs(capturedAt));
     },
     scheduleProvider: async () => deserializeTrainSchedule(validated.trainSchedule),
   };
