@@ -161,6 +161,112 @@ test('does not expand ordinary primary endpoint discovery for a short route', ()
   assert.equal(discovery.candidates[0].board.stopCode, '65029');
 });
 
+test('uses measured walking distance before deciding whether a live arrival is catchable', async () => {
+  const candidate = {
+    kind: 'direct',
+    serviceNo: '80',
+    transfers: 0,
+    totalWalkMetres: 600,
+    board: { stopCode: '65029', lat: 1.3, lng: 103.8, distanceMetres: 500, straightLineDistanceMetres: 500 },
+    alight: { stopCode: '70289', lat: 1.31, lng: 103.81, distanceMetres: 100, straightLineDistanceMetres: 100 },
+    legs: [{ serviceNo: '80', direction: 1 }],
+  };
+  const calls = [];
+  const walking = await router._test.attachWalkingDistances([candidate], { lat: 1.3, lng: 103.8 }, { lat: 1.31, lng: 103.81 }, {
+    walkingProvider: async ({ side }) => {
+      calls.push(side);
+      return side === 'access' ? { distanceMetres: 900, durationSeconds: 720 } : { distanceMetres: 300, durationSeconds: 240 };
+    },
+  });
+
+  assert.deepEqual(walking, { status: 'ready', checked: 2, failed: 0 });
+  assert.deepEqual(calls.sort(), ['access', 'egress']);
+  assert.equal(candidate.board.distanceMetres, 900);
+  assert.equal(candidate.board.straightLineDistanceMetres, 500);
+  assert.equal(candidate.alight.distanceMetres, 300);
+  assert.equal(candidate.totalWalkMetres, 1200);
+  assert.equal(candidate.walkingDistanceStatus, 'measured');
+
+  await router._test.attachLiveArrivals('fixture-key', [candidate], null, {
+    now: Date.now(),
+    arrivalProvider: async () => new Map([
+      ['80', { arrivals: [6, 12, null], monitored: [true, true, false] }],
+    ]),
+  });
+  assert.equal(candidate.catchableArrivalMinutes, 12);
+});
+
+test('deduplicates bounded walking endpoint checks and preserves proxy distances offline', async () => {
+  const first = {
+    totalWalkMetres: 300,
+    board: { stopCode: 'A', lat: 1.3, lng: 103.8, distanceMetres: 100 },
+    alight: { stopCode: 'B', lat: 1.31, lng: 103.81, distanceMetres: 200 },
+  };
+  const second = {
+    totalWalkMetres: 400,
+    board: { stopCode: 'A', lat: 1.3, lng: 103.8, distanceMetres: 150 },
+    alight: { stopCode: 'B', lat: 1.31, lng: 103.81, distanceMetres: 250 },
+  };
+  const endpoints = router._test.walkingEndpoints(
+    [first, second],
+    { lat: 1.3, lng: 103.8 },
+    { lat: 1.31, lng: 103.81 },
+    2,
+  );
+  assert.deepEqual(endpoints.map((endpoint) => endpoint.key), ['access:A', 'egress:B']);
+
+  const result = await router._test.attachWalkingDistances(
+    [first],
+    { lat: 1.3, lng: 103.8 },
+    { lat: 1.31, lng: 103.81 },
+    { allowNetwork: false },
+  );
+  assert.deepEqual(result, { status: 'unavailable', checked: 0, failed: 2 });
+  assert.equal(first.board.distanceMetres, 100);
+  assert.equal(first.alight.distanceMetres, 200);
+  assert.equal(first.totalWalkMetres, 300);
+  assert.equal(first.walkingDistanceStatus, 'proxy');
+});
+
+test('runs the walking verifier for a rechecked handler response before live arrivals', async () => {
+  const result = {};
+  const response = {
+    setHeader() {},
+    status(code) { result.status = code; return this; },
+    json(body) { result.body = body; return body; },
+  };
+  const walkingCalls = [];
+  const handler = require('../api/realtime-route');
+  await handler({
+    url: '/api/realtime-route?start=1.300000,103.800000&end=1.310000,103.810000',
+    _benchmark: {
+      stopsProvider: async () => [
+        { BusStopCode: '71007', Latitude: '1.3045', Longitude: '103.8000' },
+        { BusStopCode: '81001', Latitude: '1.3100', Longitude: '103.8100' },
+      ],
+      routesProvider: async () => [
+        { ServiceNo: '52', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '71007', Distance: 0 },
+        { ServiceNo: '52', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '81001', Distance: 6 },
+      ],
+      arrivalProvider: async () => new Map([
+        ['52', { arrivals: [10, 15, null], monitored: [true, true, false] }],
+      ]),
+      walkingProvider: async ({ side }) => {
+        walkingCalls.push(side);
+        return side === 'access' ? { distanceMetres: 800, durationSeconds: 640 } : { distanceMetres: 200, durationSeconds: 160 };
+      },
+      nowMs: Date.parse('2026-08-25T08:00:00+08:00'),
+    },
+  }, response);
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.walkingCheck, { status: 'ready', checked: 2, failed: 0 });
+  assert.deepEqual(walkingCalls.sort(), ['access', 'egress']);
+  assert.equal(result.body.candidates[0].board.distanceMetres, 800);
+  assert.equal(result.body.candidates[0].totalWalkMetres, 1000);
+  assert.equal(result.body.candidates[0].catchableArrivalMinutes, 15);
+});
+
 test('attaches live arrival state for the second bus at the transfer stop', async () => {
   const originalFetch = global.fetch;
   global.fetch = async () => ({

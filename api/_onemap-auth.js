@@ -12,7 +12,7 @@ function isTokenPayload(value) {
     && value.access_token.trim().length > 0;
 }
 
-async function getOneMapToken() {
+async function getOneMapToken({ signal } = {}) {
   const directToken = process.env.ONEMAP_ACCESS_TOKEN || process.env.ONEMAP_TOKEN;
   if (directToken) return directToken;
 
@@ -33,6 +33,7 @@ async function getOneMapToken() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
+      signal,
     },
     {
       service: 'OneMap authentication',

@@ -723,26 +723,11 @@
     }).join('') + '</div>';
   }
 
-  function itinerarySignature(itinerary) {
-    return (itinerary?.legs || []).map((leg) => [leg.mode, leg.routeName, leg.fromId || leg.fromName, leg.toId || leg.toName].join(':')).join('|');
+  function alternativeOptions(itinerary) {
+    return window.JalanRouteAlternatives.alternativeOptions(itinerary);
   }
 
-  function alternativeOptions(itinerary) {
-    const source = itinerary?.alternatives || [itinerary];
-    const usable = source.filter(Boolean);
-    if (usable.length < 2) return [];
-    const fastest = usable.reduce((best, item) => (!best || item.duration < best.duration ? item : best), null);
-    const lessWalking = usable.reduce((best, item) => (!best || item.walkDuration < best.walkDuration || (item.walkDuration === best.walkDuration && item.duration < best.duration) ? item : best), null);
-    const fewerTransfers = usable.reduce((best, item) => (!best || item.transfers < best.transfers || (item.transfers === best.transfers && item.duration < best.duration) ? item : best), null);
-    const options = [{ key: 'fastest', label: 'Fastest', itinerary: fastest }, { key: 'walking', label: 'Less walking', itinerary: lessWalking }, { key: 'transfers', label: 'Fewer transfers', itinerary: fewerTransfers }];
-    const seen = new Set();
-    return options.filter((option) => {
-      const signature = itinerarySignature(option.itinerary);
-      if (!signature || seen.has(signature)) return false;
-      seen.add(signature);
-      return true;
-    });
-  }
+  const itinerarySignature = window.JalanRouteAlternatives.itinerarySignature;
 
   function alternatives(itinerary) {
     const options = alternativeOptions(itinerary);

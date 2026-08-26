@@ -1,5 +1,7 @@
 const nearbyStopsApi = require('./nearby-stops');
 const busServiceSchedule = require('./bus-service-schedule');
+const { getOneMapToken } = require('./_onemap-auth');
+const onemapWalking = require('./onemap-walking');
 const { UpstreamError, createTimeoutSignal, fetchJson, safeUpstreamFailure } = require('./_upstream');
 
 const LTA_BUS_ROUTES_URL = 'https://datamall2.mytransport.sg/ltaodataservice/BusRoutes';
@@ -15,6 +17,8 @@ const RECHECK_SEARCH_RADIUS_METRES = 1200;
 const RECHECK_MAX_NEARBY_STOPS = 18;
 const RECHECK_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES = 450;
 // The threshold uses straight-line endpoint distance, not a measured pedestrian route.
+const WALKING_CHECK_TIMEOUT_MS = 5000;
+const MAX_WALKING_CANDIDATES = 8;
 const MAX_STATIC_CANDIDATES = 24;
 const MAX_TRANSFER_CANDIDATES = 72;
 const MAX_TRANSFER_LIVE_CHECKS = 12;
@@ -132,19 +136,23 @@ async function loadRoutes(apiKey, timeoutMs = ROUTE_LOAD_TIMEOUT_MS) {
 
 function nearby(stopRows, point, radius = SEARCH_RADIUS_METRES, limit = MAX_NEARBY_STOPS) {
   return stopRows
-    .map((stop) => ({
-      stopCode: String(stop.BusStopCode),
-      roadName: stop.RoadName || '',
-      name: stop.Description || stop.RoadName || `Bus stop ${stop.BusStopCode}`,
-      lat: Number(stop.Latitude),
-      lng: Number(stop.Longitude),
-      distanceMetres: Math.round(nearbyStopsApi._shared.distanceMetres(
+    .map((stop) => {
+      const distanceMetres = Math.round(nearbyStopsApi._shared.distanceMetres(
         point.lat,
         point.lng,
         Number(stop.Latitude),
         Number(stop.Longitude),
-      )),
-    }))
+      ));
+      return {
+        stopCode: String(stop.BusStopCode),
+        roadName: stop.RoadName || '',
+        name: stop.Description || stop.RoadName || `Bus stop ${stop.BusStopCode}`,
+        lat: Number(stop.Latitude),
+        lng: Number(stop.Longitude),
+        distanceMetres,
+        straightLineDistanceMetres: distanceMetres,
+      };
+    })
     .filter((stop) => Number.isFinite(stop.distanceMetres) && stop.distanceMetres <= radius)
     .sort((left, right) => left.distanceMetres - right.distanceMetres)
     .slice(0, limit);
@@ -409,6 +417,123 @@ function discoverCandidates(stopRows, routeRows, start, end) {
   return { ...selected, primary, expanded, rechecked: true };
 }
 
+function pointIsValid(point) {
+  return Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lng));
+}
+
+function walkingEndpoints(candidates, start, end, maxCandidates = MAX_WALKING_CANDIDATES) {
+  if (!pointIsValid(start) || !pointIsValid(end)) return [];
+  const endpoints = [];
+  const seen = new Set();
+  [...candidates]
+    .sort(compareCandidateDiscovery)
+    .slice(0, maxCandidates)
+    .forEach((candidate) => {
+      const add = (side, stop, from, to) => {
+        if (!stop?.stopCode || !pointIsValid(stop)) return;
+        const key = `${side}:${stop.stopCode}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        endpoints.push({ key, side, stop, start: from, end: to });
+      };
+      add('access', candidate.board, start, candidate.board);
+      add('egress', candidate.alight, candidate.alight, end);
+    });
+  return endpoints;
+}
+
+function normalizeWalkingResult(value) {
+  const distanceMetres = Number(value?.distanceMetres);
+  if (!Number.isFinite(distanceMetres) || distanceMetres < 0) return null;
+  const durationSeconds = Number(value?.durationSeconds);
+  return {
+    distanceMetres: Math.round(distanceMetres),
+    durationSeconds: Number.isFinite(durationSeconds) && durationSeconds >= 0 ? durationSeconds : null,
+  };
+}
+
+function applyWalkingResult(stop, result) {
+  const normalized = normalizeWalkingResult(result);
+  if (!normalized) return false;
+  const straightLineDistanceMetres = Number(stop.straightLineDistanceMetres ?? stop.distanceMetres);
+  if (Number.isFinite(straightLineDistanceMetres) && stop.straightLineDistanceMetres === undefined) {
+    stop.straightLineDistanceMetres = straightLineDistanceMetres;
+  }
+  stop.distanceMetres = normalized.distanceMetres;
+  stop.walkingDistanceMetres = normalized.distanceMetres;
+  if (normalized.durationSeconds === null) delete stop.walkingDurationSeconds;
+  else stop.walkingDurationSeconds = normalized.durationSeconds;
+  stop.walkingDistanceSource = 'onemap-walk';
+  return true;
+}
+
+function refreshCandidateWalkingMetrics(candidates) {
+  candidates.forEach((candidate) => {
+    const boardDistance = Number(candidate.board?.distanceMetres);
+    const alightDistance = Number(candidate.alight?.distanceMetres);
+    if (Number.isFinite(boardDistance) && Number.isFinite(alightDistance)) {
+      candidate.totalWalkMetres = Math.round(boardDistance + alightDistance);
+    }
+    const measured = [candidate.board, candidate.alight]
+      .filter((stop) => stop?.walkingDistanceSource === 'onemap-walk').length;
+    candidate.walkingDistanceStatus = measured === 2 ? 'measured' : measured === 1 ? 'partial' : 'proxy';
+  });
+  return candidates;
+}
+
+async function attachWalkingDistances(candidates, start, end, {
+  signal = null,
+  walkingProvider = null,
+  allowNetwork = true,
+  now = Date.now(),
+} = {}) {
+  const endpoints = walkingEndpoints(candidates, start, end);
+  if (!endpoints.length) return { status: 'not-requested', checked: 0, failed: 0 };
+
+  let provider = walkingProvider;
+  if (!provider && !allowNetwork) {
+    refreshCandidateWalkingMetrics(candidates);
+    return { status: 'unavailable', checked: 0, failed: endpoints.length };
+  }
+  if (!provider) {
+    let token;
+    try {
+      token = await getOneMapToken({ signal });
+    } catch {
+      refreshCandidateWalkingMetrics(candidates);
+      return { status: 'unavailable', checked: 0, failed: endpoints.length };
+    }
+    provider = ({ start: from, end: to, signal: requestSignal }) => onemapWalking.fetchWalkingDistance({
+      token,
+      start: from,
+      end: to,
+      signal: requestSignal,
+      now,
+    });
+  }
+
+  const results = await Promise.all(endpoints.map(async (endpoint) => {
+    try {
+      const result = await provider({ ...endpoint, signal, now });
+      return { endpoint, result: normalizeWalkingResult(result) };
+    } catch {
+      return { endpoint, result: null };
+    }
+  }));
+  let checked = 0;
+  let failed = 0;
+  results.forEach(({ endpoint, result }) => {
+    if (applyWalkingResult(endpoint.stop, result)) checked += 1;
+    else failed += 1;
+  });
+  refreshCandidateWalkingMetrics(candidates);
+  return {
+    status: checked === endpoints.length ? 'ready' : checked ? 'partial' : 'unavailable',
+    checked,
+    failed,
+  };
+}
+
 function minutesUntil(value, now = Date.now()) {
   if (!value) return null;
   const target = new Date(value).getTime();
@@ -640,6 +765,21 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    let walkingCheck = { status: 'not-requested', checked: 0, failed: 0 };
+    if (discovery.rechecked) {
+      const walkingDeadline = createTimeoutSignal(WALKING_CHECK_TIMEOUT_MS);
+      try {
+        walkingCheck = await attachWalkingDistances(candidates, start, end, {
+          signal: walkingDeadline.signal,
+          walkingProvider: benchmark.walkingProvider,
+          allowNetwork: !hasStaticProviders,
+          now: liveOptions.now,
+        });
+      } finally {
+        walkingDeadline.cancel();
+      }
+    }
+
     const liveDeadline = createTimeoutSignal(8000);
     try {
       await attachLiveArrivals(apiKey, candidates, liveDeadline.signal, liveOptions);
@@ -675,9 +815,10 @@ module.exports = async function handler(req, res) {
       nearby: { origin: originStops, destination: destinationStops },
       limitations: [
         'Bus journeys support direct routes and one transfer; MRT/LRT are not routed yet.',
-        'Access and egress distances are straight-line approximations.',
+        'Access and egress use OneMap walking-network distance during the bounded recheck when available; otherwise they remain straight-line approximations.',
         'Live arrivals are checked for both bus services when bounded live data is available, but transfer catchability and in-vehicle travel time are not estimated yet.',
       ],
+      walkingCheck,
       updatedAt: new Date().toISOString(),
     };
     if (includeSchedule) response.scheduleStatus = scheduleStatus;
@@ -696,6 +837,10 @@ module.exports._test = {
   oneTransferCandidates,
   discoverCandidates,
   shouldRecheckCandidateDiscovery,
+  walkingEndpoints,
+  normalizeWalkingResult,
+  refreshCandidateWalkingMetrics,
+  attachWalkingDistances,
   accessWalkMinutes,
   catchableArrival,
   fetchStopArrivals,
