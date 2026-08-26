@@ -195,6 +195,21 @@ test('reports exact minute matches and signed fixture observation gaps', () => {
   assert.equal(comparator.observationGap('2026-08-25T10:00:00.000Z', '2026-08-25T09:30:00.000Z').minutes, -30);
 });
 
+test('reports per-stop BusArrival timing with fixture fallback', () => {
+  const snapshot = snapshotResults({ samples: [snapshotSample({ scenarioId: SCENARIOS[0].id, departureTime: '08:00' })] });
+  const report = comparator.buildReport({
+    fixturePath: 'fixture.json.gz',
+    snapshotPath: 'snapshot.json',
+    networkFixture: { capturedAt: '2026-08-25T09:00:00.000Z' },
+    snapshot,
+    replayResults: [replayResult({ scenarioId: SCENARIOS[0].id, departureTime: '08:00' })],
+  });
+  assert.equal(
+    report.timingNote,
+    'Replay uses each raw BusArrival payload\'s optional busArrivalCapturedAt stop timestamp, falling back to fixture capturedAt when absent; requestedDate and departureTimes control scheduled rail.',
+  );
+});
+
 test('fails explicitly for missing files and invalid fixture capturedAt', async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jalan-lta-compare-'));
   const fixturePath = path.join(tempDir, 'fixture.json.gz');

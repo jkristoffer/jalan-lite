@@ -341,7 +341,7 @@ function buildReport({ fixturePath, snapshotPath, networkFixture, snapshot, repl
     departureTimes: matrix.departureTimes,
     samples,
     summary: aggregateComparison(samples),
-    timingNote: 'Replay uses fixture capturedAt for raw BusArrival normalization; requestedDate and departureTimes control scheduled rail.',
+    timingNote: 'Replay uses each raw BusArrival payload\'s optional busArrivalCapturedAt stop timestamp, falling back to fixture capturedAt when absent; requestedDate and departureTimes control scheduled rail.',
   };
 }
 
