@@ -30,7 +30,7 @@ function networkFixture() {
     capturedAt: '2026-08-26T03:03:41.577Z',
     requestedDate: '2026-08-26',
     busStops: [
-      { BusStopCode: '71008', RoadName: 'Fixture Road', Description: 'Fixture origin', Latitude: '1.3002', Longitude: '103.8' },
+      { BusStopCode: '71008', RoadName: 'Fixture Road', Description: 'Fixture origin', Latitude: '1.3045', Longitude: '103.8' },
       { BusStopCode: '81002', RoadName: 'Fixture Road', Description: 'Fixture destination', Latitude: '1.31', Longitude: '103.8102' },
     ],
     busRoutes: [
