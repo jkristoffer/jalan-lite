@@ -435,7 +435,7 @@ module.exports = async function handler(req, res) {
       'Bus-only routing continues to use LTA BusRoutes and live BusArrival data.',
       'Direct live bus-to-rail paths may be time-estimated when the LTA distance/stop-count uncertainty stays bounded; bus-transfer-to-rail paths remain unranked.',
       'Rail-to-bus paths may be time-estimated only when a monitored future LTA bus arrival remains catchable after the scheduled rail transfer with a safety margin.',
-      'Walking access and egress currently use straight-line distance.',
+      'Walking access and egress use straight-line distance unless the bounded bus candidate recheck has a OneMap walking-network measurement.',
     ],
     updatedAt: new Date().toISOString(),
   });

@@ -16,7 +16,9 @@ const MAX_NEARBY_STOPS = 6;
 const RECHECK_SEARCH_RADIUS_METRES = 1200;
 const RECHECK_MAX_NEARBY_STOPS = 18;
 const RECHECK_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES = 450;
-// The threshold uses straight-line endpoint distance, not a measured pedestrian route.
+// A 2026-08-26 capture measured Tai Seng stop 70289 at 24m straight-line but 363m walking.
+const RECHECK_CLOSE_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES = 50;
+// Both endpoint thresholds use straight-line distance, not a measured pedestrian route.
 const WALKING_CHECK_TIMEOUT_MS = 5000;
 const MAX_WALKING_CANDIDATES = 8;
 const MAX_STATIC_CANDIDATES = 24;
@@ -378,8 +380,12 @@ function shouldRecheckCandidateDiscovery({ originStops = [], destinationStops = 
   if (!originStops.length || !destinationStops.length || !candidates.length) return true;
   const best = [...candidates].sort(compareCandidateDiscovery)[0];
   return [best.board?.distanceMetres, best.alight?.distanceMetres]
-    .some((distance) => Number.isFinite(Number(distance))
-      && Number(distance) > RECHECK_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES);
+    .some((distance) => {
+      const numericDistance = Number(distance);
+      return Number.isFinite(numericDistance)
+        && (numericDistance > RECHECK_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES
+          || numericDistance <= RECHECK_CLOSE_ENDPOINT_DISTANCE_PROXY_THRESHOLD_METRES);
+    });
 }
 
 function discoverCandidatePass(stopRows, routeRows, start, end, radius, limit) {
@@ -839,6 +845,7 @@ module.exports._test = {
   shouldRecheckCandidateDiscovery,
   walkingEndpoints,
   normalizeWalkingResult,
+  applyWalkingResult,
   refreshCandidateWalkingMetrics,
   attachWalkingDistances,
   accessWalkMinutes,

@@ -56,6 +56,23 @@ node benchmarks/replay-lta-fixture.js \
 
 Raw replay normalizes each BusArrival payload against its optional per-stop `busArrivalCapturedAt` timestamp, falling back to the fixture `capturedAt` for older fixtures; `--date` and `--times` continue to control scheduled rail time.
 
+Capture measured OneMap pedestrian distances for the same bounded candidate set without storing the access token:
+
+```sh
+npx --yes vercel env run --environment=production -- node benchmarks/capture-walking-fixture.js \
+  --fixture benchmarks/fixtures/lta-network-2026-08-26.json.gz \
+  --output benchmarks/fixtures/lta-walking-2026-08-26.json.gz \
+  --force
+```
+
+The walking fixture is compressed and ignored. Replay it offline to apply the measured endpoint distances and fail explicitly if a required endpoint was not captured:
+
+```sh
+node benchmarks/replay-walking-fixture.js \
+  --network-fixture benchmarks/fixtures/lta-network-2026-08-26.json.gz \
+  --walking-fixture benchmarks/fixtures/lta-walking-2026-08-26.json.gz
+```
+
 Compare that offline replay with a compact routing snapshot:
 
 ```sh
@@ -77,7 +94,7 @@ node benchmarks/compare-lta-history.js \
 
 The stability advisory requires at least 3 comparable reports, complete matching matrices, snapshot/fixture gaps of at most 5 minutes, at least 90% replay path-identity matches, at most 25% scheduled-estimate fallback, and zero OneMap outcome changes. Reports outside the gap are surfaced but excluded from stability aggregates. This is an evidence gate only: it does not promote or alter the user-facing router or the compact benchmark promotion gate.
 
-By default, static bus rows are limited to the fixed benchmark journeys and their one-transfer neighborhoods; `--full-static` keeps the entire static feed. The fixture contains raw BusStops, BusRoutes, BusServices, selected BusArrival payloads, and the parsed GTFS train schedule. It never stores API credentials. Use `--force` only when intentionally replacing an existing file.
+By default, static bus rows are limited to the fixed benchmark journeys and their one-transfer neighborhoods; `--full-static` keeps the entire static feed. The LTA fixture contains raw BusStops, BusRoutes, BusServices, selected BusArrival payloads, and the parsed GTFS train schedule. The separate walking fixture contains only measured endpoint outcomes. Neither fixture stores API credentials. Use `--force` only when intentionally replacing an existing file.
 
 Each sample sends the same `requestedClock` timestamp to both endpoints. OneMap and scheduled LTA rail use that requested Singapore clock. Production LTA bus arrivals remain live-at-observation-time, so the report records `ltaObservationTime`; timing deltas from the live matrix are still coverage and confidence evidence, not historical ETA accuracy.
 

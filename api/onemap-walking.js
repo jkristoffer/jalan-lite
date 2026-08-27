@@ -10,19 +10,37 @@ function routeItineraries(data) {
   return data?.plan?.itineraries || data?.itineraries || [];
 }
 
+function isWalkingRouteSummaryPayload(data) {
+  return isRecord(data)
+    && Object.prototype.hasOwnProperty.call(data, 'status')
+    && typeof data.status_message === 'string'
+    && isRecord(data.route_summary)
+    && Array.isArray(data.route_instructions)
+    && finiteNonNegative(data.route_summary.total_distance) !== null
+    && finiteNonNegative(data.route_summary.total_time) !== null;
+}
+
 function isRoutePayload(data) {
   const itineraries = routeItineraries(data);
   return isRecord(data)
-    && Array.isArray(itineraries)
-    && itineraries.every((itinerary) => isRecord(itinerary) && Array.isArray(itinerary.legs));
+    && (isWalkingRouteSummaryPayload(data)
+      || (Array.isArray(itineraries) && itineraries.length > 0
+        && itineraries.every((itinerary) => isRecord(itinerary) && Array.isArray(itinerary.legs))));
 }
 
 function finiteNonNegative(value) {
+  if (value === null || value === undefined || value === '') return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }
 
 function walkingResult(data) {
+  if (isWalkingRouteSummaryPayload(data)) {
+    return {
+      distanceMetres: finiteNonNegative(data.route_summary.total_distance),
+      durationSeconds: finiteNonNegative(data.route_summary.total_time),
+    };
+  }
   if (!isRoutePayload(data)) return null;
   const itinerary = routeItineraries(data)[0];
   if (!itinerary) return null;
@@ -96,6 +114,7 @@ async function fetchWalkingDistance({ token, start, end, signal, now = new Date(
 module.exports = {
   ONEMAP_ROUTING_URL,
   isRoutePayload,
+  isWalkingRouteSummaryPayload,
   walkingResult,
   singaporeClock,
   fetchWalkingDistance,

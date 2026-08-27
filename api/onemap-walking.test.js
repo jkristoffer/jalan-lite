@@ -14,6 +14,17 @@ test('extracts walking distance and duration from a OneMap route envelope', () =
   assert.deepEqual(result, { distanceMetres: 525, durationSeconds: 420 });
 });
 
+test('extracts walking distance and duration from the native OneMap route summary', () => {
+  const payload = {
+    status: 0,
+    status_message: 'Found route between points',
+    route_summary: { total_distance: 363, total_time: 900 },
+    route_instructions: [['Walk', '0 m', '363 m']],
+  };
+  assert.equal(walking.isRoutePayload(payload), true);
+  assert.deepEqual(walking.walkingResult(payload), { distanceMetres: 363, durationSeconds: 900 });
+});
+
 test('requests a walking route without exposing the authorization value', async () => {
   const originalFetch = global.fetch;
   let requestUrl = null;
@@ -25,9 +36,10 @@ test('requests a walking route without exposing the authorization value', async 
       ok: true,
       status: 200,
       json: async () => ({
-        plan: {
-          itineraries: [{ duration: 300, legs: [{ mode: 'WALK', distance: 375, duration: 300 }] }],
-        },
+        status: 0,
+        status_message: 'Found route between points',
+        route_summary: { total_distance: 375, total_time: 300 },
+        route_instructions: [],
       }),
     };
   };
@@ -52,4 +64,24 @@ test('requests a walking route without exposing the authorization value', async 
 
 test('rejects a walking response with no usable distance', () => {
   assert.equal(walking.walkingResult({ plan: { itineraries: [{ legs: [] }] } }), null);
+});
+
+test('rejects native walking responses with missing route data', () => {
+  const payload = {
+    status: 0,
+    status_message: 'Found route between points',
+    route_summary: { total_time: 900 },
+    route_instructions: [],
+  };
+  assert.equal(walking.isRoutePayload(payload), false);
+  assert.equal(walking.walkingResult(payload), null);
+  assert.equal(walking.isRoutePayload({
+    ...payload,
+    route_summary: { total_distance: 363, total_time: 900 },
+    route_instructions: null,
+  }), false);
+  assert.equal(walking.isRoutePayload({
+    ...payload,
+    route_summary: { total_distance: null, total_time: 900 },
+  }), false);
 });

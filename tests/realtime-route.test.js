@@ -139,13 +139,35 @@ test('rechecks when the best primary candidate exceeds the straight-line endpoin
   assert.equal(discovery.candidates[0].board.stopCode, '71007');
 });
 
+test('rechecks when the best primary endpoint is suspiciously close in straight-line distance', () => {
+  const start = { lat: 1.3, lng: 103.8 };
+  const end = { lat: 1.31, lng: 103.81 };
+  const discovery = router._test.discoverCandidates(
+    [
+      { BusStopCode: '71008', Latitude: String(start.lat + 0.0002), Longitude: String(start.lng) },
+      { BusStopCode: '81002', Latitude: String(end.lat), Longitude: String(end.lng + 0.0002) },
+    ],
+    [
+      { ServiceNo: '53', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '71008', Distance: 0 },
+      { ServiceNo: '53', Operator: 'SBST', Direction: 1, StopSequence: 2, BusStopCode: '81002', Distance: 6 },
+    ],
+    start,
+    end,
+  );
+
+  assert.ok(discovery.primary.originStops[0].distanceMetres <= 50);
+  assert.equal(discovery.rechecked, true);
+  assert.ok(discovery.expanded);
+  assert.equal(discovery.candidates[0].board.stopCode, '71008');
+});
+
 test('does not expand ordinary primary endpoint discovery for a short route', () => {
   const start = { lat: 1.3, lng: 103.8 };
   const end = { lat: 1.31, lng: 103.81 };
   const discovery = router._test.discoverCandidates(
     [
-      { BusStopCode: '65029', Latitude: String(start.lat + 0.0003), Longitude: String(start.lng) },
-      { BusStopCode: '70289', Latitude: String(end.lat), Longitude: String(end.lng + 0.0003) },
+      { BusStopCode: '65029', Latitude: String(start.lat + 0.0007), Longitude: String(start.lng) },
+      { BusStopCode: '70289', Latitude: String(end.lat), Longitude: String(end.lng + 0.0007) },
     ],
     [
       { ServiceNo: '80', Operator: 'SBST', Direction: 1, StopSequence: 1, BusStopCode: '65029', Distance: 0 },
