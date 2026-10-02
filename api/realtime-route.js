@@ -1,6 +1,6 @@
 const nearbyStopsApi = require('./nearby-stops');
 const busServiceSchedule = require('./bus-service-schedule');
-const { getOneMapToken } = require('./_onemap-auth');
+const { withOneMapToken } = require('./_onemap-auth');
 const onemapWalking = require('./onemap-walking');
 const { UpstreamError, createTimeoutSignal, fetchJson, safeUpstreamFailure } = require('./_upstream');
 
@@ -498,20 +498,16 @@ async function attachWalkingDistances(candidates, start, end, {
     return { status: 'unavailable', checked: 0, failed: endpoints.length };
   }
   if (!provider) {
-    let token;
-    try {
-      token = await getOneMapToken({ signal });
-    } catch {
-      refreshCandidateWalkingMetrics(candidates);
-      return { status: 'unavailable', checked: 0, failed: endpoints.length };
-    }
-    provider = ({ start: from, end: to, signal: requestSignal }) => onemapWalking.fetchWalkingDistance({
-      token,
-      start: from,
-      end: to,
-      signal: requestSignal,
-      now,
-    });
+    provider = ({ start: from, end: to, signal: requestSignal }) => withOneMapToken(
+      (token) => onemapWalking.fetchWalkingDistance({
+        token,
+        start: from,
+        end: to,
+        signal: requestSignal,
+        now,
+      }),
+      { signal: requestSignal },
+    );
   }
 
   const results = await Promise.all(endpoints.map(async (endpoint) => {

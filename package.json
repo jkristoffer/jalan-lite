@@ -1,0 +1,11 @@
+{
+  "name": "jalan-lite",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "test": "node --test *.test.js tests/*.test.js"
+  },
+  "devDependencies": {
+    "vercel": "^59.10.0"
+  }
+}

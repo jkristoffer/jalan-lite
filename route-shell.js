@@ -12,25 +12,33 @@
   const routeRequests = runtime.createRequestCoordinator();
   const liveRequests = runtime.createRequestCoordinator();
 
-  let saved = load();
+  const scheduleTools = window.JalanSchedule;
+  const journeyTools = window.JalanJourney;
+  const singaporeDate = (now = Date.now()) => new Date(now + 8 * 3600000).toISOString().slice(0, 10);
+  const singaporeTime = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16);
+  let completedOccurrences = [];
+  try { completedOccurrences = JSON.parse(sessionStorage.getItem('jalan-lite-completed-occurrences') || '[]'); if (!Array.isArray(completedOccurrences)) completedOccurrences = []; } catch {}
+  let activeSession = journeyTools?.load() || null;
+  let saved = activeSession?.plan || load();
   let draftState = draft(saved);
   let pickerField = null;
   let mapPosition = { center: { ...DEFAULT_CENTER }, zoom: 14, label: 'Singapore' };
-  let routeState = { status: 'idle', data: null, error: '' };
+  let routeState = activeSession?.itinerary ? {status:'ready',data:activeSession.itinerary,error:''} : { status: 'idle', data: null, error: '' };
   let map = null;
   let mapSelectionMarkers = [];
   let mapGeneration = 0;
   let viewing = false;
   let selectedLegIndex = null;
+  let expandedLiveLegIndex = null;
+  let routeMapLocation = null;
+  let routeLocationInFlight = false;
   let liveRefreshTimer = null;
   let liveRefreshInFlight = false;
   let liveUpdatedAt = 0;
   let liveRefreshStatus = 'idle';
-  let disruptionDemoOpen = false;
+  let disruptionDemoOpen = new URLSearchParams(location.search).get('demo') === 'disruption';
   let disruptionDemoStep = 'alert';
   let disruptionDemoTimer = null;
-  let notificationState = 'idle';
-  let notificationMessage = '';
   let focusMode = false;
   let focusClockTimer = null;
   let focusWakeLock = null;
@@ -40,11 +48,23 @@
   let dashboardScrollAnimationFrame = null;
   let dismissedNotice = '';
   let routinesOpen = false;
+  let saveFormOpen = false;
+  let recoveryOpen = false;
+  let recoveryOrigin = null;
+  let formError = '';
+  const storageHealth = routineStorage.load();
+  if (storageHealth.ok === false) formError = 'Saved data could not be migrated or read safely. Existing records are retained; changes may not persist on this browser.';
+  let searchGeneration = 0;
+  let searchResults = [];
+  let searchMessage = '';
+  let searchQuery = '';
+  let savedCategory = 'route';
+
 
   shell.className = 'route-shell';
   launcher.className = 'route-launcher';
   launcher.type = 'button';
-  launcher.textContent = 'Commute';
+  launcher.textContent = 'Saved';
   launcher.hidden = true;
 
   const escapeHtml = (value = '') => String(value).replace(/[&<>"']/g, (character) => ({
@@ -101,8 +121,13 @@
       destination: value?.destination || '',
       originPoint: value?.originPoint || null,
       destinationPoint: value?.destinationPoint || null,
-      departureTime: value?.departureTime || '08:30',
-      timeMode: value?.timeMode === 'arrive' ? 'arrive' : 'depart',
+      departureTime: value?.departureTime || singaporeTime(),
+      date: value?.date || singaporeDate(),
+      days: value && 'days' in value ? value.days : [1,2,3,4,5],
+      exceptions: value?.exceptions || {},
+      usualRouteSignature: value?.usualRouteSignature || '',
+      linkedRoutineId: value?.linkedRoutineId || null,
+      timeMode: value?.timeMode || 'now',
     };
   }
 
@@ -120,46 +145,45 @@
   }
 
   function syncLegacyRoute(routines) {
-    const routine = routines.find((value) => value.type === 'route');
-    if (!routine) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    const route = routineStorage.routeFromRoutine(routine);
-    if (!route) return null;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(route));
-    return route;
+    const routine = routines.find(value => value.type === 'route');
+    return routine ? routineStorage.routeFromRoutine(routine) : null;
+  }
+
+  function occurrenceFor(routine) {
+    const candidate = window.JalanSchedule?.nextOccurrence(routine);
+    return candidate && completedOccurrences.includes(candidate.routineId + ':' + candidate.date) ? window.JalanSchedule.nextOccurrence(routine, Date.now(), {includeOverdue:false}) : candidate;
   }
 
   function load() {
     if (!routineStorage) return legacyLoad();
     const loaded = routineStorage.load();
-    const routine = loaded.routines.find((value) => value.type === 'route');
-    return routine ? routineStorage.routeFromRoutine(routine) : null;
+    const occurrences = loaded.routines.filter(value => value.type === 'route').map(occurrenceFor).filter(Boolean);
+    const occurrence = occurrences.sort((a,b) => (a.overdue ? 0 : 1)-(b.overdue ? 0 : 1) || a.timestamp-b.timestamp)[0];
+    const routine = occurrence ? loaded.routines.find(value => value.id === occurrence.routineId) : loaded.routines.find(value => value.type === 'route');
+    return routine ? { ...routineStorage.routeFromRoutine(routine), ...(occurrence ? { date: occurrence.date, departureTime: occurrence.time, timeMode: occurrence.timeMode, overdue: occurrence.overdue } : {}) } : null;
   }
 
   function save(value) {
-    saved = value;
-    draftState = draft(value);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-    if (!routineStorage) return;
     const loaded = routineStorage.load();
-    const routeRoutine = routineStorage.routineFromRoute(value);
-    if (routeRoutine) {
-      const next = [routeRoutine, ...loaded.routines.filter((routine) => routine.id !== routeRoutine.id)];
-      routineStorage.save(next);
-    }
+    const record = routineStorage.routineFromRoute(value);
+    const result = routineStorage.save([record, ...loaded.routines.filter(r => r.id !== record.id)]);
+    if (!result.ok) { formError = 'Could not save on this browser. Your draft is still here. Please retry.'; return false; }
+    const preview = saved;
+    saved = { ...value, persisted: true, ...(preview ? {date:preview.date,departureTime:preview.departureTime,timeMode:preview.timeMode,origin:preview.origin,originPoint:preview.originPoint,destination:preview.destination,destinationPoint:preview.destinationPoint} : {}) };
+    if (activeSession) { activeSession = {...activeSession,plan:saved}; journeyTools.save(activeSession); }
+    draftState = draft(saved);
+    formError = '';
+    return true;
   }
 
   function clearSavedRoute() {
-    localStorage.removeItem(STORAGE_KEY);
     if (!routineStorage) return;
     const loaded = routineStorage.load();
     const activeId = routeRoutineId(saved);
     const next = activeId
       ? loaded.routines.filter((routine) => routine.id !== activeId)
       : loaded.routines.filter((routine) => routine.type !== 'route');
-    routineStorage.save(next);
+    if (!routineStorage.save(next).ok) { formError = 'Could not remove this journey. Please retry.'; return saved; }
     return syncLegacyRoute(next);
   }
 
@@ -188,7 +212,7 @@
   function routineSchedule(routine) {
     if (routine.type === 'route') {
       const label = routine.schedule.timeMode === 'arrive' ? 'Arrive by' : 'Leave at';
-      return `${label} ${routineTime(routine.schedule.departureTime)}`;
+      return `${routineDays(routine.schedule.days)} · ${label} ${routineTime(routine.schedule.departureTime)}`;
     }
     const start = routineTime(routine.schedule.startTime);
     const end = routine.schedule.endTime ? `–${routineTime(routine.schedule.endTime)}` : '';
@@ -205,9 +229,7 @@
       : `${routine.bus.services.join(' · ')} · ${routineSchedule(routine)}`;
     const label = routine.homeWorkLabel === 'home' ? 'Home' : routine.homeWorkLabel === 'work' ? 'Work' : '';
     const labelMarkup = label ? '<span class="routine-home-work">' + label + '</span>' : '';
-    const alertMarkup = routine.notifications?.disruptionAlerts || routine.notifications?.routeAlerts
-      ? '<span class="routine-alert-preference">Alerts saved</span>'
-      : '';
+    const alertMarkup = '';
     const busId = routine.legacy?.key === routineStorage?.STORAGE_KEYS.presets ? routine.legacy.id : routine.id.replace(/^bus:/, '');
     const routineId = escapeHtml(isRoute ? routine.id : busId);
     return '<article class="routine-item ' + (isRoute ? 'routine-item-route' : 'routine-item-bus') + '">' +
@@ -215,24 +237,17 @@
       '<h2>' + escapeHtml(routine.name) + '</h2>' +
       '<p>' + escapeHtml(detail) + '</p>' +
       '<div class="routine-item-extra">' + escapeHtml(extra) + '</div>' +
-      '<div class="routine-item-actions"><button type="button" class="routine-action-primary" data-route-action="open-routine" data-routine-id="' + routineId + '">' + (isRoute ? 'Open commute' : 'Open bus arrivals') + '</button><button type="button" class="routine-action-secondary" data-route-action="edit-routine" data-routine-id="' + routineId + '">Edit</button><button type="button" class="routine-action-remove" data-route-action="remove-routine" data-routine-id="' + routineId + '" data-routine-label="' + escapeHtml(routine.name) + '">Remove</button></div>' +
+      '<div class="routine-item-actions"><button type="button" class="routine-action-primary" data-route-action="open-routine" data-routine-id="' + routineId + '">' + (isRoute ? 'Open journey' : 'Open bus arrivals') + '</button><button type="button" class="routine-action-secondary" data-route-action="edit-routine" data-routine-id="' + routineId + '">Edit</button><button type="button" class="routine-action-remove" data-route-action="remove-routine" data-routine-id="' + routineId + '" data-routine-label="' + escapeHtml(routine.name) + '">Remove</button></div>' +
       '</article>';
   }
 
   function routinesView() {
-    const routines = routineRecords();
-    const actions = routines.length
-      ? '<div class="routine-library-actions"><button type="button" class="route-primary" data-route-action="new-route">Plan a route</button><button type="button" class="route-link" data-route-action="bus">Save bus-only routine</button></div>'
-      : '';
-    const content = routines.length
-      ? '<div class="routine-list" aria-label="Saved routines">' + routines.map(routineItem).join('') + '</div>'
-      : '<div class="routine-empty"><span class="routine-empty-mark">◎</span><h2>No routines yet</h2><p>Save a route or bus commute and it will appear here.</p><button type="button" class="route-primary" data-route-action="new-route">Plan a route</button><button type="button" class="route-link" data-route-action="bus">Open bus arrivals</button></div>';
-    return '<div class="route-panel routines-mode">' +
-      '<div class="routine-library-header"><button type="button" class="routine-back" aria-label="Back to commute" data-route-action="close-routines">‹</button><div><div class="route-kicker">DailyLoop</div><h1>Routines</h1></div></div>' +
-      '<p class="routine-library-intro">Your saved journeys and bus checks, together in one place.</p>' +
-      actions +
-      content +
-      '</div>';
+    const records = routineRecords().filter(r => r.type === savedCategory);
+    return `<div class="route-panel routines-mode"><div class="routine-library-header"><button class="routine-back" aria-label="Back to journey" data-route-action="close-routines">‹</button><h1>Saved</h1></div>
+      <div class="route-time-mode" role="group" aria-label="Saved categories"><button data-route-action="saved-category" data-category="route" aria-pressed="${savedCategory === 'route'}">Journeys</button><button data-route-action="saved-category" data-category="bus" aria-pressed="${savedCategory === 'bus'}">Bus stops</button></div>
+      ${formError ? `<p role="alert">${escapeHtml(formError)}</p>` : ''}
+      <div class="routine-library-actions"><button class="route-primary" data-route-action="${savedCategory === 'route' ? 'new-route' : 'bus'}">${savedCategory === 'route' ? 'Plan a journey' : 'Add a bus stop'}</button></div>
+      ${records.length ? records.map(routineItem).join('') : `<div class="routine-empty"><h2>No ${savedCategory === 'route' ? 'journeys' : 'bus stops'} saved yet</h2><p>${savedCategory === 'route' ? 'Plan a journey, then save your routine.' : 'Save a stop and the services you use.'}</p></div>`}</div>`;
   }
 
   function routineById(id) {
@@ -250,11 +265,19 @@
     cancelAsyncWork();
     destroyMap();
     shell.hidden = true;
+    document.querySelector('.app-shell').hidden = false;
     launcher.hidden = false;
-    if (id && window.JalanBus?.open) window.JalanBus.open(id);
+    if (id && window.JalanBus?.open) window.JalanBus.open(id); else window.JalanBus?.list();
+  }
+
+  function leaveActive() {
+    if (!activeSession) return true;
+    if (!window.confirm('End the active journey to open a different plan?')) return false;
+    journeyTools.clear(); activeSession = null; return true;
   }
 
   function beginRouteEdit() {
+    if (!leaveActive()) return;
     cancelAsyncWork();
     dashboardPane = 'now';
     draftState = draft(saved);
@@ -265,9 +288,12 @@
   }
 
   function startNewRoute() {
+    if (!leaveActive()) return false;
     cancelAsyncWork();
     dashboardPane = 'now';
     saved = null;
+    saveFormOpen = false;
+    formError = '';
     draftState = draft({ id: newRouteId(), name: 'New commute' });
     routeState = { status: 'idle', data: null, error: '' };
     routinesOpen = false;
@@ -275,6 +301,7 @@
   }
 
   function openRoutine(id) {
+    if (!leaveActive()) return;
     const routine = routineById(id);
     routinesOpen = false;
     if (!routine) { render(); return; }
@@ -284,8 +311,9 @@
       return;
     }
     const ordered = [routine, ...routineRecords().filter((value) => value.id !== routine.id)];
-    routineStorage.save(ordered);
-    saved = syncLegacyRoute(ordered) || routineStorage.routeFromRoutine(routine);
+    const occurrence = occurrenceFor(routine);
+    saved = { ...routineStorage.routeFromRoutine(routine), ...(occurrence ? { date: occurrence.date, departureTime: occurrence.time, timeMode: occurrence.timeMode, overdue: occurrence.overdue } : {}) };
+    saveFormOpen = false;
     draftState = draft(saved);
     dashboardPane = 'now';
     routeState = { status: 'idle', data: null, error: '' };
@@ -306,20 +334,14 @@
     beginRouteEdit();
   }
 
-  function mirrorBusLegacyKey(routines) {
-    if (!routineStorage) return;
-    const presets = routines.filter((routine) => routine.type === 'bus').map(routineStorage.busPresetFromRoutine).filter(Boolean);
-    localStorage.setItem(routineStorage.STORAGE_KEYS.presets, JSON.stringify(presets));
-  }
-
   function removeRoutine(id, label = 'this routine') {
     const routine = routineById(id);
     if (!routine || !routineStorage) return;
     if (typeof window.confirm === 'function' && !window.confirm(`Remove ${label}?`)) return;
     const loaded = routineStorage.load();
     const next = loaded.routines.filter((value) => value.id !== routine.id);
-    routineStorage.save(next);
-    if (routine.type === 'bus') mirrorBusLegacyKey(next);
+    if (!routineStorage.save(next).ok) { formError = 'Could not remove the saved item. Please retry.'; render(); return; }
+    if (routine.type === 'bus') window.JalanBus?.sync();
     else {
       const remainingRoute = next.find((value) => value.type === 'route');
       const removingActive = routeRoutineId(saved) === routine.id;
@@ -351,23 +373,39 @@
     </button>`;
 
     return `<div class="route-panel">
-      <div class="route-topbar">${brand()}<button type="button" class="route-link compact" data-route-action="routines">Routines</button></div>
+      <div class="route-topbar">${brand()}<button type="button" class="route-link compact" data-route-action="routines">Saved</button></div>
       <div class="route-setup-copy"><div class="route-kicker">Bus + MRT · Singapore</div><h1>Where are you going?</h1><p>Set a start and destination to see your public-transport journey.</p>${network()}</div>
       <div class="route-form">
         <div class="route-input-card">${locationRow('origin', 'From', 'Choose where you start', 'origin')}${locationRow('destination', 'To', 'Choose where you’re going', 'destination')}</div>
-        ${routineMetaFields()}
-        <div class="route-time-mode" role="group" aria-label="Journey time preference"><button type="button" class="route-time-mode-button${draftState.timeMode === 'depart' ? ' selected' : ''}" data-route-action="time-mode" data-time-mode="depart">Leave at</button><button type="button" class="route-time-mode-button${draftState.timeMode === 'arrive' ? ' selected' : ''}" data-route-action="time-mode" data-time-mode="arrive">Arrive by</button></div>
-        <label class="route-time-field"><span><span class="route-field-label">${draftState.timeMode === 'arrive' ? 'Arrive by' : 'Leave at'}</span><small>Used to calculate the commute timetable</small></span><input id="route-time-input" type="time" value="${escapeHtml(draftState.departureTime || '08:30')}" step="300"></label>
-        <button class="route-primary" data-route-action="save" ${draftState.origin && draftState.destination ? '' : 'disabled'}>${saved ? 'Save changes' : 'Plan this commute'}</button>
+        ${travelFields()}
+        ${formError ? `<p role="alert">${escapeHtml(formError)} ${formError.includes('scheduled time') ? '<button data-route-action="tomorrow">Use tomorrow</button>' : ''}</p>` : ''}
+        <button class="route-primary" data-route-action="plan" ${draftState.originPoint && draftState.destinationPoint ? '' : 'disabled'}>Show journey</button>
       </div>
       <button class="route-link" data-route-action="bus">I only need bus arrivals</button>
-      <button class="route-link demo-disruption-link" data-route-action="demo-disruption">Preview disruption flow</button>
+
     </div>`;
   }
 
+  function travelFields() {
+    return `<div class="route-time-mode" role="group" aria-label="Journey time preference">${[['now','Leave now'],['depart','Leave at'],['arrive','Arrive by']].map(([mode,label]) => `<button type="button" class="route-time-mode-button${draftState.timeMode === mode ? ' selected' : ''}" aria-pressed="${draftState.timeMode === mode}" data-route-action="time-mode" data-time-mode="${mode}">${label}</button>`).join('')}</div>
+      ${draftState.timeMode === 'now' ? `<p class="schedule-context">Today · ${singaporeDate()} · Singapore time</p>` : `<div class="travel-date-fields"><label>Date (Singapore)<input id="route-date-input" type="date" min="${singaporeDate()}" value="${escapeHtml(draftState.date)}"></label><label>${draftState.timeMode === 'arrive' ? 'Arrive by' : 'Leave at'}<input id="route-time-input" type="time" value="${escapeHtml(draftState.departureTime)}"></label></div>`}`;
+  }
+
   function picker() {
-    const value = draftState[pickerField] || '';
-    return `<div class="route-picker"><div class="picker-topbar"><button class="picker-back" aria-label="Back" data-route-action="cancel">‹</button><div><div class="route-kicker">${pickerField === 'origin' ? 'From' : 'To'}</div><div class="picker-title">Choose on map</div></div></div><div class="mapbox-stage"><div id="route-map" class="route-map"></div><div class="picker-crosshair"><span></span></div><div id="map-fallback" class="map-fallback" hidden><strong>Map unavailable</strong><span>Type the location below instead.</span></div><button class="picker-locate" aria-label="Use my current location" data-route-action="locate">◎ My location</button></div><div class="picker-sheet"><div class="route-card-label">Selected area</div><div id="picker-label" class="picker-place">${escapeHtml(mapPosition.label)}</div><div id="picker-coords" class="picker-coords">${mapPosition.center.lat.toFixed(5)}, ${mapPosition.center.lng.toFixed(5)}</div><button class="route-primary" data-route-action="confirm">Use this point</button><div class="picker-divider"><span>or type a place</span></div><div class="picker-manual-row"><input id="picker-manual-input" class="picker-manual-input" value="${escapeHtml(value)}" placeholder="Tampines MRT, postal code, Blk 123…"><button class="picker-manual-button" data-route-action="manual" ${value ? '' : 'disabled'}>Use</button></div></div></div>`;
+    return `<div class="route-picker"><div class="picker-topbar"><button class="picker-back" aria-label="Back" data-route-action="cancel">‹</button><h1 class="picker-title">${pickerField === 'origin' ? 'Starting place' : pickerField === 'recovery' ? 'Replan from' : 'Destination'}</h1></div>
+      <div class="place-search"><label for="picker-manual-input">Search a place or postal code</label><div class="picker-manual-row"><input id="picker-manual-input" class="picker-manual-input" value="${escapeHtml(searchQuery)}" placeholder="Tampines MRT"><button class="picker-manual-button" data-route-action="manual">Search</button></div><div id="place-results" aria-live="polite">${searchResultsMarkup()}</div></div>
+      <details class="map-picker-details"><summary>Choose a map pin or use my location</summary><div class="mapbox-stage"><div id="route-map" class="route-map"></div><div class="picker-crosshair"><span></span></div><div id="map-fallback" class="map-fallback" hidden>Map unavailable. Search above.</div><button class="picker-locate" data-route-action="locate">◎ My location</button></div><div class="picker-sheet"><div id="picker-label" class="picker-place">${escapeHtml(mapPosition.label)}</div><div id="picker-coords" class="picker-coords">${mapPosition.center.lat.toFixed(5)}, ${mapPosition.center.lng.toFixed(5)}</div><button class="route-primary" data-route-action="confirm">Use this point</button></div></details></div>`;
+  }
+
+  function searchResultsMarkup() {
+    return `<p role="status">${escapeHtml(searchMessage)}</p>` + searchResults.map((item,index) => `<button class="place-result" data-place-index="${index}"><strong>${escapeHtml(item.name || item.label)}</strong><span>${escapeHtml(item.address)}</span><small>${Number(item.lat).toFixed(5)}, ${Number(item.lng).toFixed(5)} · Map position</small></button>`).join('');
+  }
+
+  function choosePlace(label, point) {
+    if (pickerField === 'recovery') { recoveryOrigin = { ...point, name: label }; pickerField = null; recoveryOpen = false; routeData({fromNow:true, origin:recoveryOrigin}); return; }
+    draftState[pickerField] = label;
+    draftState[pickerField + 'Point'] = point;
+    closePicker();
   }
 
   function journey() {
@@ -382,9 +420,11 @@
     const rightLabel = arriveBy ? 'Expected departure' : 'Expected arrival';
     const rightValue = arriveBy ? (departure || '—') : (arrival || '—');
     const routeMeta = itinerary ? durationLabel(itinerary.duration) + ' · ' + itinerary.transfers + ' transfer' + (itinerary.transfers === 1 ? '' : 's') : '';
-    const routeStatus = currentRoute ? (itinerary.service === 'next' ? 'next available' : 'live timing') : 'planned';
+    const routeStatus = itinerary ? liveTools.summary(itinerary).label : 'Planned';
+    const routeTitle = '<div class="now-route-title"><strong>' + escapeHtml(saved.origin) + '</strong><span aria-hidden="true">→</span><strong>' + escapeHtml(saved.destination) + '</strong></div>';
     return '<div class="journey-hero-route">' +
-      '<div class="now-route-header"><span class="route-card-label">YOUR JOURNEY</span><span class="now-route-status">' + escapeHtml(routeStatus) + '</span></div>' +
+      '<div class="now-route-header">' + routeTitle + '<button type="button" class="now-route-more" aria-label="Edit saved commute" data-route-action="edit">•••</button></div>' +
+      '<div class="now-route-context"><span class="route-card-label">YOUR JOURNEY</span><span class="now-route-status">' + escapeHtml(routeStatus) + '</span></div>' +
       '<div class="journey-hero-location"><span class="route-node origin"></span><div><div class="journey-label">From</div><div class="journey-place">' + escapeHtml(saved.origin) + '</div></div></div>' +
       '<div class="journey-hero-location"><span class="route-node destination"></span><div><div class="journey-label">To</div><div class="journey-place">' + escapeHtml(saved.destination) + '</div></div></div>' +
       '<div class="now-route-time"><div><span class="route-field-label">' + escapeHtml(leftLabel) + '</span><strong>' + escapeHtml(leftValue || '—') + '</strong></div><span class="now-route-time-arrow" aria-hidden="true">→</span><div><span class="route-field-label">' + escapeHtml(rightLabel) + '</span><strong>' + escapeHtml(rightValue) + '</strong></div></div>' +
@@ -393,24 +433,46 @@
   }
 
   function journeyHero() {
-    const state = journeyTemporalState();
-    const focusButton = routeState.data
-      ? `<button id='journey-hero-focus' class='focus-launch-button journey-hero-focus' data-route-action='focus'${state.isStale || state.phase === 'planning' || routeState.status === 'rerouting' ? ' hidden' : ''}>Focus mode</button>`
+    return '<section class="journey-hero">' + temporalCard() + '<div class="compact-journey"><strong>' + escapeHtml(saved.name || 'Journey preview') + '</strong><span>' + escapeHtml(saved.date || singaporeDate()) + ' · Singapore time</span><details><summary>Journey details</summary>' + journey() + '</details></div>' + (routeState.data ? '<button class="route-link" data-route-action="save-form">' + (routineById(routeRoutineId(saved)) ? 'Edit routine' : 'Save as a routine') + '</button>' : '') + (routineById(routeRoutineId(saved)) ? '<div class="routine-day-actions"><button data-route-action="skip-today">Skip today</button><button data-route-action="change-today">Change time today</button><button data-route-action="return">Add return journey</button></div>' : '') + '</section>';
+  }
+
+  function journeyLegPreview(itinerary) {
+    const legs = itinerary?.legs || [];
+    if (!legs.length) return '';
+    const journeyState = journeyLegState(itinerary);
+    const anchorIndex = Number.isInteger(journeyState.currentIndex)
+      ? journeyState.currentIndex
+      : journeyState.nextIndex;
+    const maxStart = Math.max(0, legs.length - 3);
+    const start = Number.isInteger(anchorIndex) ? Math.min(maxStart, Math.max(0, anchorIndex - 1)) : 0;
+    const visible = legs.slice(start, start + 3).map((leg, offset) => ({ leg, index: start + offset }));
+    const overflow = Math.max(0, legs.length - visible.length);
+    const rows = visible.map(({ leg, index }) => {
+      const current = journeyState.currentIndex === index;
+      const next = journeyState.nextIndex === index;
+      const marker = current ? 'Now' : next ? 'Next' : '';
+      const mode = leg.mode === 'SUBWAY' ? 'MRT' : leg.mode;
+      const aria = legTitle(leg) + (marker ? ', ' + marker.toLowerCase() : '');
+      return '<button type="button" class="journey-leg-preview-item' + (current ? ' current' : '') + (next ? ' next' : '') + '" data-route-action="leg" data-route-leg="' + index + '" aria-label="' + escapeHtml(aria) + '"><span class="journey-leg-preview-mode ' + escapeHtml(String(leg.mode || '').toLowerCase()) + '">' + escapeHtml(mode) + '</span><span class="journey-leg-preview-copy"><strong>' + escapeHtml(legTitle(leg)) + '</strong><span>' + escapeHtml(legMeta(leg)) + '</span></span><span class="journey-leg-preview-time">' + escapeHtml(legTimes(leg) || '—') + (marker ? '<small>' + escapeHtml(marker) + '</small>' : '') + '</span></button>';
+    }).join('');
+    const more = overflow > 0
+      ? '<button type="button" class="journey-leg-preview-more" data-route-action="dashboard-pane" data-dashboard-pane="route" aria-label="Open Route to see ' + overflow + ' more of ' + legs.length + ' journey legs">+' + overflow + ' more of ' + legs.length + ' legs<span aria-hidden="true">→</span></button>'
       : '';
-    return '<section class="journey-hero">' + temporalCard() + journey() + focusButton + '</section>';
+    return '<div class="journey-leg-preview"><div class="route-card-label">Journey preview</div><div class="journey-leg-preview-list">' + rows + more + '</div></div>';
   }
 
   function timing(leg) {
-    if (leg.mode === 'BUS' && leg.live?.arrivals) {
+    if (leg.mode === 'BUS' && leg.live?.arrivals && legConfidence(leg).key === 'live') {
       const arrivals = leg.live.arrivals.filter(Number.isFinite).slice(0, 3);
-      if (arrivals.length) return `<div class="leg-live"><span class="live-dot"></span>${arrivals.map((value) => `<b>${value === 0 ? 'Arr' : `${value} min`}</b>`).join('')}<em>live</em></div>`;
+      if (arrivals.length) return `<div class="leg-live"><span class="live-dot"></span>${arrivals.map((value) => `<b>${value === 0 ? 'Arr' : `${value} min`}</b>`).join('')}<em>at stop now</em></div>`;
     }
+    if (legConfidence(leg).key === 'stale') return '<div class="leg-live scheduled">Stale feed · scheduled connection</div>';
     if (leg.mode === 'BUS' && leg.liveStatus === 'loading') return '<div class="leg-live muted">Checking live arrivals…</div>';
     if (leg.mode === 'BUS' && leg.liveStatus === 'error') return '<div class="leg-live scheduled"><b>Schedule fallback</b><em>LTA unavailable</em></div>';
     if (leg.mode === 'BUS' && leg.liveStatus === 'ready') return '<div class="leg-live scheduled"><b>No live arrival</b><em>LTA</em></div>';
     if (leg.mode === 'SUBWAY' && leg.trainStatus === 'loading') return '<div class="leg-live muted">Checking LTA train updates…</div>';
     if (leg.mode === 'SUBWAY' && leg.trainRealtime?.alertText) return `<div class="leg-live alert"><span class="live-dot"></span><b>${escapeHtml(leg.trainRealtime.alertText)}</b><em>LTA alert</em></div>`;
-    if (leg.mode === 'SUBWAY' && leg.trainRealtime && (leg.trainRealtime.departureTime || leg.trainRealtime.arrivalTime)) {
+    if (leg.mode === 'SUBWAY' && legConfidence(leg).key === 'live' && leg.trainRealtime && (leg.trainRealtime.departureTime || leg.trainRealtime.arrivalTime)) {
       const departure = leg.trainRealtime.departureTime ? timeAt(leg.trainRealtime.departureTime) : '—';
       const arrival = leg.trainRealtime.arrivalTime ? timeAt(leg.trainRealtime.arrivalTime) : '—';
       const delay = leg.trainRealtime.delay ? ` · ${Math.round(leg.trainRealtime.delay / 60)} min delay` : '';
@@ -426,11 +488,21 @@
     return liveTools.statusForLeg(leg);
   }
 
+  function liveCategory(status) {
+    if (!status) return 'Checking';
+    if (status.key === 'live') return 'Live';
+    if (status.key === 'alert') return 'Alert';
+    if (status.key === 'fallback') return 'Fallback';
+    if (status.key === 'partial') return 'Partly live';
+    if (status.key === 'checking') return 'Checking';
+    return status.label || 'Scheduled';
+  }
+
   function confidenceMarkup(leg) {
     const status = legConfidence(leg);
     const age = liveTools.ageLabel(status.updatedAt);
     const detail = `${status.source}${age ? ` · ${age}` : ''}`;
-    return `<div class="timeline-confidence ${escapeHtml(status.tone)}"><span class="timeline-confidence-label">${escapeHtml(status.label)}</span><span>${escapeHtml(detail)}</span></div>`;
+    return `<div class="timeline-confidence ${escapeHtml(status.tone)}"><span class="timeline-confidence-label">${escapeHtml(liveCategory(status))}</span><span>${escapeHtml(detail)}</span></div>`;
   }
 
   function transferPoint(previous, current) {
@@ -463,11 +535,7 @@
   }
 
   function todayAt(value) {
-    const [hours, minutes] = String(value || '').split(':').map(Number);
-    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0;
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    return date.getTime();
+    return Date.parse(`${saved?.date || singaporeDate()}T${value || '00:00'}:00+08:00`) || 0;
   }
 
   function focusTimes() {
@@ -479,21 +547,10 @@
     return { departure, arrival };
   }
 
-  function journeyLegState(itinerary, now = Date.now()) {
-    const { departure, arrival } = focusTimes();
-    if (!itinerary || !departure || !arrival) return { currentIndex: null, nextIndex: null };
-    const legs = temporalLegs(itinerary, departure);
-    if (now < departure) return { currentIndex: null, nextIndex: legs[0]?.index ?? null };
-    if (now >= arrival) return { currentIndex: null, nextIndex: null };
-    const current = legs.find((entry) => now >= entry.start && now < entry.end);
-    if (current) {
-      const next = legs.slice(current.index + 1).find((entry) => entry.start > now);
-      return { currentIndex: current.index, nextIndex: next?.index ?? null };
-    }
-    const next = legs.find((entry) => entry.start > now);
-    return { currentIndex: null, nextIndex: next?.index ?? null };
+  function journeyLegState(itinerary) {
+    const guidance = activeSession && journeyTools.guidance(activeSession, itinerary);
+    return {currentIndex: guidance && guidance.phase !== 'complete' ? guidance.legIndex : null, nextIndex: guidance ? guidance.legIndex + 1 : 0};
   }
-
 
   function temporalLegs(itinerary, departure) {
     let cursor = departure;
@@ -524,93 +581,26 @@
     if (leg.duration) details.push(durationLabel(leg.duration));
     if (leg.mode === 'BUS' && Array.isArray(leg.live?.arrivals)) {
       const first = leg.live.arrivals.find((value) => Number.isFinite(value));
-      if (Number.isFinite(first)) details.push(first === 0 ? 'Arriving now' : 'Next bus in ' + first + ' min');
+      if (Number.isFinite(first)) details.push('At stop now: ' + (first === 0 ? 'arriving' : first + ' min') + ' (not a confirmed connection)');
     }
     const status = legConfidence(leg);
     const age = liveTools.ageLabel(status.updatedAt, now);
-    details.push(status.label + ' · ' + status.source + (age ? ' · ' + age : ''));
+    details.push(liveCategory(status) + ' · ' + status.source + (age ? ' · ' + age : ''));
     return details.join(' · ');
   }
 
   function journeyTemporalState(now = Date.now()) {
     const itinerary = routeState.data;
-    const { departure, arrival } = focusTimes();
-    if (!itinerary || !departure || !arrival) {
-      return {
-        phase: 'loading',
-        label: 'GETTING READY',
-        countdownMs: 0,
-        primaryTime: '',
-        currentAction: 'Waiting for your route',
-        detail: 'The route timetable is still being prepared.',
-        nextAction: '',
-        confidenceLeg: null,
-        isStale: false,
-      };
-    }
-
-    const legs = temporalLegs(itinerary, departure);
-    if (now < departure) {
-      const first = legs[0];
-      const next = legs.slice(1).find((entry) => entry.leg.mode !== 'WALK') || legs[1];
-      const timeUntilDeparture = departure - now;
-      const planning = timeUntilDeparture > PLANNING_WINDOW_MS;
-      const arriveBy = saved?.timeMode === 'arrive';
-      if (planning) {
-        return {
-          phase: 'planning',
-          label: arriveBy ? 'ARRIVE BY' : 'PLANNED COMMUTE',
-          countdownMs: timeUntilDeparture,
-          primaryTime: timeAt(arriveBy ? arrival : departure),
-          currentAction: arriveBy ? 'Leave around ' + timeAt(departure) : 'Leave at ' + timeAt(departure),
-          detail: 'Live timings refresh closer to departure.',
-          nextAction: '',
-          confidenceLeg: null,
-          isStale: false,
-        };
-      }
-      return {
-        phase: 'upcoming',
-        label: itinerary.service === 'next' ? 'NEXT DEPARTURE' : 'LEAVE IN',
-        countdownMs: timeUntilDeparture,
-        primaryTime: '',
-        currentAction: actionLabel(first?.leg),
-        detail: actionDetail(first?.leg, now),
-        nextAction: next ? actionLabel(next.leg) : '',
-        confidenceLeg: next?.leg || first?.leg || null,
-        isStale: false,
-      };
-    }
-
-    if (now < arrival) {
-      const active = legs.find((entry) => now >= entry.start && now < entry.end);
-      const upcoming = legs.find((entry) => entry.start > now);
-      const next = active ? legs.slice(active.index + 1).find((entry) => entry.leg.mode !== 'WALK') : null;
-      const current = active || upcoming;
-      return {
-        phase: active ? 'in_progress' : 'between_legs',
-        label: active ? 'NOW' : 'NEXT',
-        countdownMs: active ? arrival - now : Math.max(0, (upcoming?.start || arrival) - now),
-        primaryTime: '',
-        currentAction: actionLabel(current?.leg, Boolean(active)),
-        detail: actionDetail(current?.leg, now),
-        nextAction: active ? (next ? actionLabel(next.leg) : '') : '',
-        confidenceLeg: current?.leg || null,
-        isStale: false,
-      };
-    }
-
-    return {
-      phase: 'complete',
-      label: 'TRIP TIME PASSED',
-      countdownMs: 0,
-      primaryTime: '',
-      currentAction: 'Ready for a fresh route',
-      detail: 'The planned arrival at ' + (saved?.destination || 'your destination') + ' was ' + timeAt(arrival) + '.',
-      nextAction: '',
-      confidenceLeg: null,
-      isStale: true,
-    };
+    const {departure, arrival} = focusTimes();
+    if (!itinerary) return {phase:'loading',label:'PLANNING',currentAction:'Finding your route',detail:'Checking public transport.',countdownMs:0};
+    const guidance = activeSession ? journeyTools.guidance(activeSession,itinerary,now) : null;
+    const overdue = !guidance && departure < now - 60000;
+    return {phase:guidance ? (guidance.phase === 'complete' ? 'complete' : 'in_progress') : departure > now + PLANNING_WINDOW_MS ? 'planning' : 'upcoming',
+      label:guidance ? 'CONFIRMED JOURNEY' : overdue ? 'DEPARTURE PASSED' : 'PLANNED DEPARTURE',
+      currentAction:guidance ? guidance.label : overdue ? 'Running late? Update your plan' : actionLabel(itinerary.legs[0]),
+      detail:guidance ? guidance.detail : 'Start commute when you leave. Progress changes only when you confirm it.',
+      countdownMs:Math.max(0,(guidance ? arrival : departure)-now), primaryTime:timeAt(departure),
+      nextAction:'', confidenceLeg:itinerary.legs[guidance?.legIndex || 0], isStale:overdue};
   }
 
   function temporalCountdownLabel(state) {
@@ -656,7 +646,7 @@
   function focusView() {
     const info = focusInfo();
     const freshness = liveFreshness();
-    return `<div class="focus-view"><div class="focus-topbar"><div><div class="route-kicker">DailyLoop · focus mode</div><div class="focus-route">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div><button class="focus-exit" data-route-action="exit-focus">Exit</button></div><main class="focus-face"><div id="focus-phase" class="focus-phase focus-phase-${escapeHtml(info.phase)}">${escapeHtml(info.label)}</div><div id="focus-countdown" class="focus-countdown" role="timer" aria-live="off" aria-label="${escapeHtml(info.label)} ${escapeHtml(info.countdown)}">${escapeHtml(info.countdown)}</div><div id="focus-context" class="focus-context">${escapeHtml(info.context)}</div></main><div class="focus-footer"><span id="focus-freshness">${escapeHtml(freshness)}</span><span>Live route data updates automatically</span></div></div>`;
+    return `<div class="focus-view"><div class="focus-topbar"><div><div class="route-kicker">DailyLoop · route guidance</div><div class="focus-route">${escapeHtml(saved.origin)} → ${escapeHtml(saved.destination)}</div></div><button class="focus-exit" data-route-action="exit-focus">Exit</button></div><main class="focus-face"><div id="focus-phase" class="focus-phase focus-phase-${escapeHtml(info.phase)}">${escapeHtml(info.label)}</div><div id="focus-countdown" class="focus-countdown" role="timer" aria-live="off" aria-label="${escapeHtml(info.label)} ${escapeHtml(info.countdown)}">${escapeHtml(info.countdown)}</div><div id="focus-context" class="focus-context">${escapeHtml(info.context)}</div></main><div class="focus-footer"><span id="focus-freshness">${escapeHtml(freshness)}</span><span>Guidance view · no location tracking</span></div></div>`;
   }
 
   function updateFocusDom() {
@@ -733,8 +723,8 @@
     const options = alternativeOptions(itinerary);
     if (options.length < 2) return '';
     const selectedSignature = itinerarySignature(itinerary);
-    const tabs = options.map((option) => '<button class="route-alternative' + (itinerarySignature(option.itinerary) === selectedSignature ? ' selected' : '') + '" data-route-action="alternative" data-route-alternative="' + option.key + '"><strong>' + escapeHtml(option.label) + '</strong><span>' + durationLabel(option.itinerary.duration) + ' · ' + option.itinerary.transfers + ' transfer' + (option.itinerary.transfers === 1 ? '' : 's') + '</span></button>').join('');
-    return '<div class="route-alternatives"><div class="route-card-label">Compare routes</div><div class="route-alternative-tabs">' + tabs + '</div></div>';
+    const tabs = options.map((option) => '<button class="route-alternative' + (itinerarySignature(option.itinerary) === selectedSignature ? ' selected' : '') + '" data-route-action="alternative" data-route-alternative="' + option.key + '"><strong>' + escapeHtml(option.label) + '</strong><span>' + durationLabel(option.itinerary.duration) + ' · ' + option.itinerary.transfers + ' transfer' + (option.itinerary.transfers === 1 ? '' : 's') + ' · walk ' + durationLabel(option.itinerary.walkDuration) + ' / ' + distanceLabel(option.itinerary.walkDistance) + ' · arrive ' + timeAt(option.itinerary.endTime) + ' · ' + escapeHtml(liveTools.summary(option.itinerary).label) + '</span></button>').join('');
+    return '<div class="route-alternatives"><div class="route-card-label">Compare routes</div><div class="route-alternative-tabs">' + tabs + '</div>' + (routineById(routeRoutineId(saved)) ? '<button class="route-link" data-route-action="save-usual">Use selected as my usual route</button>' : '') + '</div>';
   }
 
   function routeLabel(itinerary) {
@@ -766,96 +756,24 @@
   }
 
   function temporalCard() {
+    const itinerary = routeState.data;
+    if (!itinerary) return `<div class="journey-hero-state"><h2>${routeState.status === 'error' ? 'Route unavailable' : 'Finding your route…'}</h2><p role="status">${escapeHtml(routeState.error || 'Checking Singapore public transport.')}</p>${routeState.status === 'error' ? '<button class="route-primary" data-route-action="recover">Replan from now</button><button class="route-link" data-route-action="edit">Change date or places</button>' : ''}</div>`;
     const state = journeyTemporalState();
-    const planning = state.phase === 'planning';
-    const countdown = planning ? (state.primaryTime || '—') : (temporalCountdownLabel(state) || '—');
-    if (state.phase === 'loading') {
-      const failure = routeState.status === 'error';
-      const detail = failure ? routeState.error : 'Checking Singapore public transport.';
-      const failureAction = failure ? '<button class="route-primary journey-hero-refresh" data-route-action="refresh">Try again</button>' : '';
-      return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-loading" role="status"><div class="journey-action-block"><div id="journey-temporal-action-label" class="journey-action-kicker">' + temporalActionKicker(state) + '</div><h2 id="journey-temporal-action">' + (failure ? 'Route unavailable' : 'Finding your route…') + '</h2><p id="journey-temporal-detail">' + escapeHtml(detail) + '</p></div><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + (failure ? 'ROUTE UNAVAILABLE' : 'PLANNING') + '</div><strong id="journey-temporal-countdown" class="now-countdown">—</strong></div><span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span></div>' + failureAction + '</div>';
-    }
-    const confidence = planning ? null : (state.confidenceLeg ? legConfidence(state.confidenceLeg) : null);
-    const confidenceText = planning ? 'Scheduled · refreshes later' : (confidence ? confidence.label + ' · ' + confidence.source : '');
-    const relativeMarkup = '<span id="journey-temporal-relative" class="now-planning-relative"' + (planning ? '' : ' hidden') + '>' + (planning ? 'In ' + escapeHtml(temporalCountdownLabel(state)) : '') + '</span>';
-    const actionButton = '<button class="route-primary journey-hero-refresh" data-route-action="refresh-now"' + (state.isStale ? '' : ' hidden') + '>Recalculate from now</button>';
-    return '<div id="journey-hero-state" class="journey-hero-state journey-hero-state-' + state.phase + '" aria-live="polite"><div class="journey-action-block"><div id="journey-temporal-action-label" class="journey-action-kicker">' + temporalActionKicker(state) + '</div><h2 id="journey-temporal-action">' + escapeHtml(temporalActionText(state)) + '</h2><p id="journey-temporal-detail">' + escapeHtml(state.detail) + '</p></div><div class="now-state-top"><div><div id="journey-temporal-label" class="route-card-label">' + escapeHtml(state.label) + '</div><strong id="journey-temporal-countdown" class="now-countdown">' + escapeHtml(countdown) + '</strong>' + relativeMarkup + '</div>' + (confidenceText ? '<span id="journey-temporal-confidence" class="journey-temporal-confidence">' + escapeHtml(confidenceText) + '</span>' : '<span id="journey-temporal-confidence" class="journey-temporal-confidence" hidden></span>') + '</div><div id="journey-temporal-next" class="journey-temporal-next"' + (state.nextAction ? '' : ' hidden') + '><span>Then</span><strong>' + escapeHtml(state.nextAction) + '</strong></div>' + actionButton + '</div>';
+    const guidance = activeSession && journeyTools.guidance(activeSession,itinerary);
+    const confidence = liveTools.summary(itinerary);
+    const busy = routeState.status === 'rerouting';
+    return `<div id="manual-journey-state" class="journey-hero-state" aria-live="polite"><div class="route-card-label">${escapeHtml(state.label)}</div><h2>${escapeHtml(state.currentAction)}</h2><p>${escapeHtml(state.detail)}</p><div class="manual-timing"><span>Leave <strong>${timeAt(itinerary.startTime)}</strong></span><span>Expected arrival <strong>${timeAt(itinerary.endTime)}</strong></span></div><p class="confidence-summary">${escapeHtml(confidence.label)} · ${escapeHtml(confidence.detail)}</p>
+      ${guidance?.phase === 'complete' ? '<button class="route-primary" data-route-action="finish">Finish journey</button>' : `<button class="route-primary" data-route-action="${guidance ? 'advance' : state.isStale ? 'recover' : 'start'}" ${busy ? 'disabled' : ''}>${guidance ? escapeHtml(guidance.confirmationLabel || guidance.label) : state.isStale ? 'Replan from now' : 'Start commute'}</button>`}
+      ${guidance?.phase !== 'complete' ? `<button class="route-link" data-route-action="recover" ${busy ? 'disabled' : ''}>${guidance ? 'Missed it / Running late' : 'Running late? Choose where to replan'}</button>` : ''}
+      ${routeState.notice ? `<p role="status">${escapeHtml(routeState.notice)}</p>${routeState.notice.startsWith('Could not') ? '<button class="route-link" data-route-action="recover">Retry replanning</button>' : ''}` : ''}${formError ? `<p role="alert">${escapeHtml(formError)}</p>` : ''}</div>`;
   }
 
   function modeStatusLabel(status) {
-    return ({ live: 'live', partial: 'partly live', alert: 'alert', checking: 'checking', fallback: 'fallback', scheduled: 'scheduled' })[status] || '—';
-  }
-
-  function notificationSupportIssue() {
-    if (window.isSecureContext === false) return 'Notifications require a secure HTTPS connection.';
-    if (!('Notification' in window)) return 'This browser does not support web notifications.';
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'Push notifications are not available in this browser.';
-    return '';
+    return ({ stale: 'Stale', live: 'Live', partial: 'Partly live', alert: 'Alert', checking: 'Checking', fallback: 'Fallback', scheduled: 'Scheduled' })[status] || '—';
   }
 
   function notificationsCard() {
-    const copy = notificationState === 'pending'
-      ? 'The browser flow is ready, but server-side push delivery still needs to be connected.'
-      : notificationState === 'denied'
-        ? 'Notifications are blocked. Allow them in browser settings, then try again.'
-        : notificationState === 'unsupported'
-          ? notificationMessage
-          : notificationState === 'error'
-            ? notificationMessage
-            : 'Get a push alert when LTA reports a disruption affecting this saved commute.';
-    const buttonLabel = notificationState === 'loading' ? 'Checking…' : notificationState === 'pending' ? 'Check setup again' : notificationState === 'denied' ? 'Try again' : 'Enable disruption alerts';
-    const tone = ['pending', 'denied', 'unsupported', 'error'].includes(notificationState) ? ` notification-${notificationState}` : '';
-    return `<section class="notifications-card${tone}"><div class="route-card-label">Disruption alerts</div><h2>Know before you leave.</h2><p>${escapeHtml(copy)}</p>${notificationMessage && notificationState !== 'unsupported' && notificationState !== 'error' ? `<div class="notification-status" role="status">${escapeHtml(notificationMessage)}</div>` : ''}<button type="button" class="notification-button" data-route-action="notifications" ${notificationState === 'loading' ? 'disabled' : ''}>${buttonLabel}</button></section>`;
-  }
-
-  function decodePushKey(value) {
-    const padding = '='.repeat((4 - (value.length % 4)) % 4);
-    const binary = window.atob(`${value.replace(/-/g, '+').replace(/_/g, '/')}${padding}`);
-    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  }
-
-  async function enableNotifications() {
-    const issue = notificationSupportIssue();
-    if (issue) {
-      notificationState = 'unsupported';
-      notificationMessage = issue;
-      render();
-      return;
-    }
-
-    notificationState = 'loading';
-    notificationMessage = 'Checking push setup…';
-    render();
-    try {
-      const response = await fetch('/api/push-config');
-      const data = await runtime.readJson(response, 'Push setup returned an invalid response.');
-      if (!response.ok || !runtime.isPushConfigPayload(data)) {
-        notificationState = 'pending';
-        notificationMessage = 'Add the VAPID key and subscription store before asking for permission.';
-        render();
-        return;
-      }
-
-      const permission = window.Notification.permission === 'granted' ? 'granted' : await window.Notification.requestPermission();
-      if (permission !== 'granted') {
-        notificationState = 'denied';
-        notificationMessage = 'Permission was not granted on this device.';
-        render();
-        return;
-      }
-
-      const registration = await navigator.serviceWorker.ready;
-      let subscription = await registration.pushManager.getSubscription();
-      if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodePushKey(data.publicKey) });
-      localStorage.setItem('jalan-lite-push-subscription-v1', JSON.stringify(subscription.toJSON()));
-      notificationState = 'pending';
-      notificationMessage = 'Permission granted on this device. Server delivery still needs to be connected.';
-      render();
-    } catch (error) {
-      notificationState = 'error';
-      notificationMessage = error?.message || 'Could not prepare notifications on this device.';
-      render();
-    }
+    return '<section class="notifications-card"><div class="route-card-label">In-app disruption checks</div><h2>Updates while DailyLoop is open</h2><p>We check available LTA feeds while you use the app. Keep it open to see service alerts and find another route.</p></section>';
   }
 
   function dashboardPaneIndex(pane) {
@@ -882,7 +800,7 @@
     if (!alerts.length) return '';
     const first = alerts[0];
     const count = alerts.length > 1 ? `${alerts.length} alerts` : 'Affects this journey';
-    return `<div class='dashboard-alert-strip' role='alert'><span class='dashboard-alert-icon'><span class='live-dot'></span>Live alert</span><strong>${escapeHtml(first.header || first.description)}</strong><span class='dashboard-alert-count'>${escapeHtml(count)}</span><button class='route-link' data-route-action='dashboard-pane' data-dashboard-pane='live'>View</button></div>`;
+    return `<div class='dashboard-alert-strip' role='alert'><span class='dashboard-alert-icon'><svg aria-hidden='true' viewBox='0 0 24 24' fill='none'><path d='m10.2 4.5-7.1 12.3A2 2 0 0 0 4.8 19.8h14.4a2 2 0 0 0 1.7-3L13.8 4.5a2 2 0 0 0-3.6 0Z' fill='currentColor'/><path d='M12 8.5v5M12 16.5h.01' stroke='white' stroke-width='2' stroke-linecap='round'/></svg><span>Live alert</span></span><strong>${escapeHtml(first.header || first.description)}</strong><span class='dashboard-alert-count'>${escapeHtml(count)}</span><button class='route-link' data-route-action='dashboard-pane' data-dashboard-pane='live'>View <span aria-hidden='true'>›</span></button></div>`;
   }
 
   function dashboardNav() {
@@ -905,18 +823,75 @@
         const status = legConfidence(leg);
         const age = liveTools.ageLabel(status.updatedAt);
         const source = status.source + (age ? ' · ' + age : '');
+        const expanded = expandedLiveLegIndex === index;
+        const detailId = 'live-leg-detail-' + index;
         const marker = current
           ? '<span class="timeline-current-label current">Now</span>'
           : next
             ? '<span class="timeline-current-label next">Next</span>'
             : '';
-        return '<button type="button" class="live-leg-row' + (current ? ' current' : '') + (next ? ' next' : '') + '" data-route-action="leg" data-route-leg="' + index + '" aria-label="' + escapeHtml(legTitle(leg) + (current ? ', now' : next ? ', next' : '')) + '">' +
-          '<span class="live-leg-top"><span class="live-leg-title"><strong>' + escapeHtml(legTitle(leg)) + '</strong>' + marker + '</span><span class="live-leg-status"><span class="live-leg-confidence ' + escapeHtml(status.tone) + '">' + escapeHtml(status.label) + '</span><span class="live-leg-source">' + escapeHtml(source) + '</span></span></span>' +
-          '<span class="live-leg-meta">' + escapeHtml(legMeta(leg)) + '</span>' +
-          '<span class="live-leg-bottom"><span>' + escapeHtml(legTimes(leg)) + '</span>' + timing(leg) + '</span>' +
-          '</button>';
+        const label = legTitle(leg) + (current ? ', now' : next ? ', next' : '');
+        return '<div class="live-leg-row' + (current ? ' current' : '') + (next ? ' next' : '') + (expanded ? ' expanded' : '') + '" data-live-mode="' + escapeHtml(String(leg.mode || '').toLowerCase()) + '">' +
+          '<button type="button" class="live-leg-toggle" data-route-action="toggle-live-leg" data-route-leg="' + index + '" data-live-label="' + escapeHtml(label) + '" aria-expanded="' + String(expanded) + '" aria-controls="' + detailId + '" aria-label="' + escapeHtml((expanded ? 'Hide' : 'Show') + ' details for ' + label) + '">' +
+            '<span class="live-leg-top"><span class="live-leg-title"><strong>' + escapeHtml(legTitle(leg)) + '</strong>' + marker + '</span><span class="live-leg-status"><span class="live-leg-confidence ' + escapeHtml(status.tone) + '">' + escapeHtml(liveCategory(status)) + '</span><span class="live-leg-source">' + escapeHtml(source) + '</span></span></span>' +
+            '<span class="live-leg-meta">' + escapeHtml(legMeta(leg)) + '</span>' +
+            '<span class="live-leg-bottom"><span>' + escapeHtml(legTimes(leg)) + '</span>' + timing(leg) + '<span class="live-leg-disclosure" aria-hidden="true">' + (expanded ? 'Hide details' : 'Details') + ' · ' + (expanded ? '−' : '+') + '</span></span>' +
+          '</button>' +
+          '<div class="live-leg-actions"><button type="button" class="route-link live-leg-focus" data-route-action="leg" data-route-leg="' + index + '" aria-label="Show ' + escapeHtml(label) + ' on the Route map">Focus on Route map <span aria-hidden="true">→</span></button></div>' +
+          '<div id="' + detailId + '" class="live-leg-detail" role="region" aria-label="' + escapeHtml(label + ' timing details') + '"' + (expanded ? '' : ' hidden') + '><p>' + escapeHtml(liveLegDetail(leg)) + '</p></div>' +
+          '</div>';
       }).join('') +
       '</div></div>';
+  }
+
+  function liveLegDetail(leg, now = Date.now()) {
+    const status = legConfidence(leg);
+    const age = liveTools.ageLabel(status.updatedAt, now);
+    const detail = [];
+    const scheduled = legTimes(leg);
+    if (scheduled) detail.push('Timetable: ' + scheduled);
+
+    if (leg.mode === 'BUS') {
+      const arrivals = Array.isArray(leg.live?.arrivals) ? leg.live.arrivals.filter(Number.isFinite).slice(0, 3) : [];
+      if (arrivals.length) detail.push('Arrivals at this stop now, not confirmed connections: ' + arrivals.map((value) => value === 0 ? 'arriving' : value + ' min').join(', ') + '.');
+      else if (leg.liveStatus === 'loading') detail.push('Live bus arrivals are being checked.');
+      else if (leg.liveStatus === 'error') detail.push('Fallback: OneMap scheduled timing because LTA arrivals are unavailable.');
+      else if (leg.liveStatus === 'ready') detail.push('No live bus arrival was returned; the OneMap timetable is shown.');
+      else detail.push('No live bus arrival feed is available; the OneMap timetable is shown.');
+    } else if (leg.mode === 'SUBWAY') {
+      if (leg.trainStatus === 'loading') detail.push('Live train updates are being checked.');
+      else if (leg.trainRealtime?.alertText) detail.push('LTA alert: ' + leg.trainRealtime.alertText);
+      else if (leg.trainRealtime && (leg.trainRealtime.departureTime || leg.trainRealtime.arrivalTime)) {
+        const departure = leg.trainRealtime.departureTime ? timeAt(leg.trainRealtime.departureTime) : '—';
+        const arrival = leg.trainRealtime.arrivalTime ? timeAt(leg.trainRealtime.arrivalTime) : '—';
+        const delay = Number(leg.trainRealtime.delay);
+        detail.push('LTA update: ' + departure + ' → ' + arrival + (Number.isFinite(delay) && delay > 0 ? ' · reported delay ' + Math.round(delay / 60) + ' min' : '') + '.');
+      } else if (leg.trainStatus === 'error') detail.push('Fallback: OneMap scheduled timing because LTA train updates are unavailable.');
+      else if (leg.trainStatus === 'ready') detail.push('No live train update was returned; the OneMap timetable is shown.');
+      else detail.push('No live train feed is available; the OneMap timetable is shown.');
+    }
+
+    if (['BUS','SUBWAY'].includes(leg.mode)) { const atStop = activeSession?.phase === 'waiting' && activeSession.legIndex === leg.index; const connection = atStop ? liveTools.reachableConnection(leg, Date.now()) : null; detail.push(connection?.reachable ? 'From your confirmed stop, reachable estimate with a two-minute boarding margin: ' + timeAt(connection.departureAt) + '.' : 'Connection remains scheduled or estimated until you confirm reaching this stop; allow a two-minute boarding margin.'); }
+    detail.push('Status: ' + liveCategory(status) + '. Source: ' + status.source + (age ? ' · ' + age : '') + '.');
+    return detail.join(' ');
+  }
+
+  function toggleLiveLeg(button) {
+    const index = Number(button?.dataset.routeLeg);
+    if (!Number.isInteger(index)) return;
+    const opening = button.getAttribute('aria-expanded') !== 'true';
+    expandedLiveLegIndex = opening ? index : null;
+    shell.querySelectorAll('.live-leg-toggle').forEach((toggle) => {
+      const isOpen = opening && Number(toggle.dataset.routeLeg) === index;
+      toggle.setAttribute('aria-expanded', String(isOpen));
+      toggle.setAttribute('aria-label', (isOpen ? 'Hide' : 'Show') + ' details for ' + (toggle.dataset.liveLabel || 'this leg'));
+      const row = toggle.closest('.live-leg-row');
+      if (row) row.classList.toggle('expanded', isOpen);
+      const detail = document.getElementById(toggle.getAttribute('aria-controls'));
+      if (detail) detail.hidden = !isOpen;
+      const disclosure = toggle.querySelector('.live-leg-disclosure');
+      if (disclosure) disclosure.textContent = isOpen ? 'Hide details · −' : 'Details · +';
+    });
   }
 
   function timingCard() {
@@ -941,7 +916,7 @@
         : !hasLiveTiming(itinerary)
           ? 'No live feed'
           : 'Refresh live data';
-    return `<section class='timing-card'><div class='timing-heading'><div><div class='route-card-label'>Timing confidence</div><h2>${sourceHeading}</h2></div><div class='timing-status'><span class='live-state live-state-${escapeHtml(summary.tone)}'>${escapeHtml(summary.label)}</span><span id='live-freshness' class='live-freshness'>${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p>${liveLegList(itinerary)}<div class='timing-controls'><span class='timing-control-note'>${escapeHtml(liveFreshness())}</span><button type='button' class='timing-refresh' data-route-action='refresh-live' ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div><button class='route-link demo-disruption-link' data-route-action='demo-disruption'>Preview disruption flow</button></section>`;
+    return `<section class='timing-card'><div class='timing-heading'><div><div class='route-card-label'>Timing confidence</div><h2>${sourceHeading}</h2></div><div class='timing-status'><span class='live-state live-state-${escapeHtml(summary.tone)}'>${escapeHtml(liveCategory(summary))}</span><span id='live-freshness' class='live-freshness'>${escapeHtml(liveFreshness())}</span></div></div><p>${escapeHtml(summary.detail)} ${escapeHtml(sourceCopy)}</p>${liveLegList(itinerary)}<div class='timing-controls'><span class='timing-control-note'>${escapeHtml(liveFreshness())}</span><button type='button' class='timing-refresh' data-route-action='refresh-live' ${refreshDisabled ? 'disabled' : ''}>${refreshLabel}</button></div></section>`;
   }
 
   function routeActions() {
@@ -990,7 +965,8 @@
       const index = Math.round(pager.scrollLeft / Math.max(1, pager.clientWidth));
       dashboardPane = panes[Math.max(0, Math.min(panes.length - 1, index))];
       updateDashboardNavDom();
-      if (dashboardPane === 'route') requestInlineRouteMap();
+      if (['now', 'route'].includes(dashboardPane)) requestInlineRouteMap();
+      else if (map) destroyMap();
     };
     pager.addEventListener('scroll', () => {
       if (dashboardScrollUnlockTimer) return;
@@ -1000,14 +976,19 @@
   }
 
   function requestInlineRouteMap() {
-    if (dashboardPane !== 'route' || !saved || !routeState.data || viewing || focusMode || pickerField || disruptionDemoOpen) return;
-    const container = document.getElementById('route-inline-map');
+    if (!['now', 'route'].includes(dashboardPane) || !saved || !routeState.data || viewing || focusMode || pickerField || disruptionDemoOpen) return;
+    const suffix = dashboardPane === 'now' ? 'now' : 'route';
+    const container = document.getElementById(`route-inline-map-${suffix}`);
     if (!container) return;
     if (map) {
-      window.requestAnimationFrame(() => { if (map) map.resize(); });
-      return;
+      const mapContainer = map.getContainer?.();
+      if (mapContainer === container) {
+        window.requestAnimationFrame(() => { if (map) map.resize(); });
+        return;
+      }
+      destroyMap();
     }
-    window.requestAnimationFrame(() => renderInlineRouteMap());
+    window.requestAnimationFrame(() => renderInlineRouteMap(`route-inline-map-${suffix}`, `route-inline-fallback-${suffix}`));
   }
 
   function animateDashboardPane(pager, target) {
@@ -1040,20 +1021,34 @@
       }, 500);
       animateDashboardPane(pager, target);
     }
-    if (dashboardPane === 'route') requestInlineRouteMap();
+    if (['now', 'route'].includes(dashboardPane)) requestInlineRouteMap();
+    else if (map) destroyMap();
   }
 
-  function routeMapPanel() {
+  function routeMapPanel(pane = 'route') {
     const ready = Boolean(routeState.data);
-    const heading = routeState.status === 'error' ? 'Map unavailable' : ready ? 'Route map' : 'Preparing route map';
+    const isNow = pane === 'now';
+    const mapId = `route-inline-map-${pane}`;
+    const fallbackId = `route-inline-fallback-${pane}`;
+    const heading = routeState.status === 'error' ? 'Map unavailable' : ready ? (isNow ? 'Live route data' : 'Route map') : 'Preparing route map';
     const detail = routeState.status === 'error' ? 'The journey timeline is still available below.' : ready ? 'Tap a leg to focus it.' : 'The map will appear once the route is ready.';
     const selectedLeg = ready && Number.isInteger(selectedLegIndex) ? routeState.data.legs?.[selectedLegIndex] : null;
     const hint = selectedLeg ? 'Showing ' + legTitle(selectedLeg) : ready ? 'Tap a leg to focus' : 'Route updates here';
-    return '<div class="route-inline-map-sticky"><div class="route-inline-map-heading"><span class="route-card-label">Route map</span><span class="route-inline-map-hint">' + escapeHtml(hint) + '</span></div><div class="route-inline-map-wrap"><div id="route-inline-map" class="route-inline-map" role="img" aria-label="Route map"></div><div id="route-inline-fallback" class="map-fallback"' + (ready ? ' hidden' : '') + '><strong>' + escapeHtml(heading) + '</strong><span>' + escapeHtml(detail) + '</span></div></div></div>';
+    const openRoute = isNow ? '<button type="button" class="route-inline-map-open" aria-label="Open route details" data-route-action="dashboard-pane" data-dashboard-pane="route">›</button>' : '';
+    const signals = isNow && ready
+      ? (routeState.data.legs || []).map((leg, index) => ({ leg, index })).filter(({ leg }) => ['BUS', 'SUBWAY'].includes(leg.mode)).slice(0, 3).map(({ leg, index }) => {
+        const status = legConfidence(leg);
+        return '<button type="button" class="route-map-signal" data-route-action="leg" data-route-leg="' + index + '"><span class="route-map-signal-mark ' + leg.mode.toLowerCase() + '">' + (leg.mode === 'BUS' ? '▣' : '▤') + '</span><span class="route-map-signal-copy"><strong>' + escapeHtml(legTitle(leg)) + '</strong><span>' + escapeHtml(liveCategory(status)) + '</span></span><span class="route-map-signal-arrow" aria-hidden="true">›</span></button>';
+      }).join('')
+      : '';
+    const recenterControls = !isNow && ready
+      ? '<div class="route-map-controls"><button type="button" class="route-map-recenter" data-route-action="recenter-route" aria-label="Center route map on my current location" aria-controls="route-location-status"><svg class="route-map-recenter-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Recenter map</span></button><span id="route-location-status" class="route-location-status" role="status" aria-live="polite">One-shot device location</span></div>'
+      : '';
+    return '<section class="route-inline-map-sticky route-inline-map-' + pane + '"><div class="route-inline-map-heading"><div><span class="route-card-label">' + escapeHtml(heading) + '</span><span class="route-inline-map-hint">' + escapeHtml(hint) + '</span></div>' + openRoute + '</div><div class="route-inline-map-wrap"><div id="' + mapId + '" class="route-inline-map" role="img" aria-label="Route map showing ' + escapeHtml(saved.origin) + ' to ' + escapeHtml(saved.destination) + '"></div><div id="' + fallbackId + '" class="map-fallback"' + (ready ? ' hidden' : '') + '><strong>' + escapeHtml(heading) + '</strong><span>' + escapeHtml(detail) + '</span></div></div>' + recenterControls + (signals ? '<div class="route-map-signals">' + signals + '</div>' : '') + '</section>';
   }
 
   function dashboard() {
-    return '<div class="route-panel dashboard-mode"><div class="route-header"><div><div class="route-kicker">Saved commute</div><h1>Your commute</h1></div><div class="route-header-actions"><button class="route-link compact" data-route-action="routines">Routines</button><button class="route-link compact" data-route-action="edit">Edit</button></div></div>' + dashboardNav() + routeNotice() + dashboardAlert() + '<div id="dashboard-pager" class="dashboard-pager" aria-label="Commute content"><div class="dashboard-track"><section id="dashboard-pane-now" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-now">' + journeyHero() + '</section><section id="dashboard-pane-route" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-route">' + routeMapPanel() + card() + '</section><section id="dashboard-pane-live" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-live">' + timingCard() + notificationsCard() + routeActions() + '</section></div></div></div>';
+    return '<div class="route-panel dashboard-mode"><div class="dashboard-topbar">' + brand() + '<button type="button" class="dashboard-routines-button" data-route-action="routines"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M6.5 4.5h11a1 1 0 0 1 1 1v14l-6.5-3.6-6.5 3.6v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Saved</span></button></div><div class="route-header"><div><div class="route-kicker">Daily journey</div><h1>Your next step</h1></div></div>' + dashboardNav() + routeNotice() + dashboardAlert() + '<div id="dashboard-pager" class="dashboard-pager" aria-label="Commute content"><div class="dashboard-track"><section id="dashboard-pane-now" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-now">' + journeyHero() + '</section><section id="dashboard-pane-route" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-route">' + routeMapPanel('route') + card() + '</section><section id="dashboard-pane-live" class="dashboard-pane" role="tabpanel" aria-labelledby="dashboard-tab-live">' + timingCard() + notificationsCard() + routeActions() + '</section></div></div></div>';
   }
 
   function demoTimeline(rerouted) {
@@ -1159,11 +1154,7 @@
   }
 
   function canRefreshLive() {
-    return Boolean(saved && routeState.status === 'ready' && routeState.data && hasLiveTiming(routeState.data) && liveWindowOpen() && !pickerField && !viewing && !disruptionDemoOpen && !document.hidden && !shell.hidden);
-  }
-
-  function canRefreshLive() {
-    return Boolean(saved && routeState.status === 'ready' && routeState.data && hasLiveTiming(routeState.data) && !pickerField && !viewing && !disruptionDemoOpen && !document.hidden && !shell.hidden);
+    return Boolean(saved && routeState.status === 'ready' && routeState.data && liveWindowOpen() && !pickerField && !viewing && !routinesOpen && !saveFormOpen && !recoveryOpen && !disruptionDemoOpen && !document.hidden && !shell.hidden);
   }
 
   function stopLiveRefresh() {
@@ -1249,40 +1240,9 @@
   }
 
   function updateTemporalDom() {
-    if (document.hidden || focusMode || viewing || pickerField || disruptionDemoOpen) return;
-    const card = document.getElementById('journey-hero-state');
-    if (!card) return;
-    const state = journeyTemporalState();
-    const confidence = state.confidenceLeg ? legConfidence(state.confidenceLeg) : null;
-    const label = document.getElementById('journey-temporal-label');
-    const countdown = document.getElementById('journey-temporal-countdown');
-    const actionKicker = document.getElementById('journey-temporal-action-label');
-    const action = document.getElementById('journey-temporal-action');
-    const detail = document.getElementById('journey-temporal-detail');
-    const next = document.getElementById('journey-temporal-next');
-    const confidenceNode = document.getElementById('journey-temporal-confidence');
-    const refresh = card.querySelector('[data-route-action="refresh-now"]');
-    const focus = document.getElementById('journey-hero-focus');
-    card.className = 'journey-hero-state journey-hero-state-' + state.phase;
-    if (label) label.textContent = state.label;
-    if (countdown) countdown.textContent = temporalCountdownLabel(state) || '—';
-    if (actionKicker) actionKicker.textContent = temporalActionKicker(state);
-    if (action) action.textContent = temporalActionText(state);
-    if (detail) detail.textContent = state.detail;
-    if (next) {
-      next.hidden = !state.nextAction;
-      next.querySelector('strong').textContent = state.nextAction;
-    }
-    if (confidenceNode) {
-      confidenceNode.hidden = !confidence;
-      confidenceNode.textContent = confidence ? confidence.label + ' · ' + confidence.source : '';
-    }
-    if (refresh) {
-      refresh.hidden = !state.isStale;
-      refresh.disabled = routeState.status === 'rerouting';
-      refresh.textContent = routeState.status === 'rerouting' ? 'Updating route…' : 'Recalculate from now';
-    }
-    if (focus) focus.hidden = state.isStale || state.phase === 'planning' || !routeState.data || routeState.status === 'rerouting';
+    if (document.hidden || focusMode || viewing || pickerField || disruptionDemoOpen || routinesOpen || saveFormOpen || recoveryOpen) return;
+    const host = document.getElementById('manual-journey-state');
+    if (host) { host.outerHTML = temporalCard(); bind(); }
     syncLiveRefresh();
   }
 
@@ -1292,13 +1252,52 @@
     temporalTimer = window.setInterval(updateTemporalDom, 30000);
   }
 
+  function saveForm() {
+    return `<div class="route-panel"><button class="route-link" data-route-action="cancel-save">‹ Back to preview</button><h1>Save your routine</h1>${routineMetaFields()}<fieldset class="routine-days"><legend>Repeat on</legend>${[[1,'Mon'],[2,'Tue'],[3,'Wed'],[4,'Thu'],[5,'Fri'],[6,'Sat'],[0,'Sun']].map(([day,label]) => `<label><input type="checkbox" data-routine-day="${day}" ${(draftState.days === null || draftState.days.includes(day)) ? 'checked' : ''}>${label}</label>`).join('')}</fieldset>${travelFields().replace(/<button[^>]*data-time-mode="now"[^>]*>Leave now<\/button>/, '')}<p>The chosen route becomes your usual route. This schedule is used for future occurrences. Your current preview keeps its original travel time.</p>${formError ? `<p role="alert">${escapeHtml(formError)}</p>` : ''}<button class="route-primary" data-route-action="save">Save routine</button></div>`;
+  }
+
+  function recoveryView() {
+    const point = activeSession ? journeyTools.guidance(activeSession,routeState.data).lastConfirmedPoint : saved.originPoint;
+    return `<div class="route-panel"><button class="route-link" data-route-action="cancel-recovery">‹ Keep current journey</button><h1>Where are you now?</h1><p>Replan from a place you confirm. Your current journey stays available if routing fails.</p><button class="route-primary" data-route-action="recover-last" ${point ? '' : 'disabled'}>Use ${activeSession ? 'last confirmed point' : 'planned starting place'}</button><button class="route-link" data-route-action="recover-search">Search / choose a pin</button><button class="route-link" data-route-action="recover-location">Use my current location</button>${formError ? `<p role="alert">${escapeHtml(formError)}</p>` : ''}</div>`;
+  }
+
+  function planDraft() {
+    if (!draftState.originPoint || !draftState.destinationPoint) return;
+    if (draftState.timeMode !== 'now' && (!draftState.date || Date.parse(`${draftState.date}T${draftState.departureTime}:00+08:00`) <= Date.now())) { formError = 'That scheduled time has passed. Choose a future time or tomorrow.'; render(); return; }
+    saved = {...draftState, id:draftState.id || newRouteId(), persisted:false};
+    formError = ''; saveFormOpen = false;
+    routeState = {status:'idle',data:null,error:''}; render();
+  }
+
+  function persistSession() {
+    const result = journeyTools.save(activeSession);
+    if (result === false || result?.ok === false) formError = 'Journey is active, but this browser could not save progress for reload.';
+  }
+
+  function dayException(kind) {
+    const record = routineById(routeRoutineId(saved));
+    if (!record) return;
+    const date = singaporeDate();
+    let exception = {skip:true};
+    if (kind === 'time') {
+      const time = window.prompt('Today’s time in Singapore (HH:MM)', saved.departureTime || singaporeTime());
+      if (time === null) return;
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) { formError = 'Enter a time as HH:MM.'; render(); return; }
+      exception = {departureTime:time,timeMode:record.schedule.timeMode};
+    }
+    const next = {...record, exceptions:{...record.exceptions,[date]:exception}};
+    if (!routineStorage.save(routineRecords().map(r => r.id === record.id ? next : r)).ok) { formError = 'Could not save today’s change. Please retry.'; render(); return; }
+    if (activeSession) { routeState.notice = 'Routine updated. Your active journey continues unchanged.'; render(); } else openRoutine(record.id);
+  }
+
   function render() {
     destroyMap();
     shell.hidden = false;
-    shell.innerHTML = routinesOpen ? routinesView() : (pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (focusMode ? focusView() : (viewing ? viewer() : (saved ? dashboard() : setup())))));
+    document.querySelector('.app-shell').hidden = true;
+    shell.innerHTML = saveFormOpen ? saveForm() : recoveryOpen && !pickerField ? recoveryView() : routinesOpen ? routinesView() : (pickerField ? picker() : (disruptionDemoOpen ? disruptionDemo() : (focusMode ? focusView() : (viewing ? viewer() : (saved ? dashboard() : setup())))));
     bind();
-    if (routinesOpen) return;
-    if (pickerField) requestAnimationFrame(renderPickerMap);
+    if (routinesOpen || saveFormOpen || (recoveryOpen && !pickerField)) return;
+    if (pickerField) { updateSearchResults(); const details = shell.querySelector('.map-picker-details'); if (details) details.ontoggle = () => { if (details.open) { if (map) map.resize(); else renderPickerMap(); } }; }
     if (viewing) requestAnimationFrame(() => renderViewerMap());
     if (saved && !pickerField && !viewing && saved.originPoint && saved.destinationPoint && routeState.status === 'idle') routeData();
     syncLiveRefresh();
@@ -1309,12 +1308,14 @@
 
   function openPicker(field) {
     pickerField = field;
+    searchGeneration++; searchResults = []; searchMessage = ''; searchQuery = '';
     const point = draftState[`${field}Point`];
     mapPosition = { center: point ? { ...point } : { ...DEFAULT_CENTER }, zoom: point ? 16 : 13.5, label: draftState[field] || 'Pinned location' };
     render();
   }
 
   function closePicker() {
+    searchGeneration++;
     pickerField = null;
     render();
   }
@@ -1393,8 +1394,9 @@
     if (!itinerary) return;
 
     const selectedLeg = Number.isInteger(selectedLegIndex) ? itinerary.legs[selectedLegIndex] : null;
-    const hint = shell.querySelector('.route-inline-map-hint');
-    if (hint) hint.textContent = selectedLeg ? 'Showing ' + legTitle(selectedLeg) : 'Tap a leg to focus';
+    shell.querySelectorAll('.route-inline-map-hint').forEach((hint) => {
+      hint.textContent = selectedLeg ? 'Showing ' + legTitle(selectedLeg) : 'Tap a leg to focus';
+    });
 
     shell.querySelectorAll('.timeline-item[data-route-leg]').forEach((item) => {
       item.classList.toggle('selected', Number(item.dataset.routeLeg) === selectedLegIndex);
@@ -1459,7 +1461,12 @@
       mapboxgl.accessToken = await mapToken();
       if (generation !== mapGeneration || !active() || !document.getElementById(containerId)) return;
       const features = mapFeatures(itinerary);
-      const nextMap = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: [saved.originPoint.lng, saved.originPoint.lat], zoom: 12.5, dragRotate: false, touchPitch: false });
+      const routePaneMap = !viewerMode && containerId === 'route-inline-map-route';
+      const initialCenter = routePaneMap && routeMapLocation
+        ? [routeMapLocation.lng, routeMapLocation.lat]
+        : [saved.originPoint.lng, saved.originPoint.lat];
+      const initialZoom = routePaneMap && routeMapLocation ? 14 : 12.5;
+      const nextMap = new mapboxgl.Map({ container, style: 'mapbox://styles/mapbox/streets-v12', center: initialCenter, zoom: initialZoom, dragRotate: false, touchPitch: false });
       if (generation !== mapGeneration || !active()) { nextMap.remove(); return; }
       map = nextMap;
       nextMap.touchZoomRotate.disableRotation();
@@ -1474,35 +1481,124 @@
         new mapboxgl.Marker({ color: '#16181A' }).setLngLat([saved.originPoint.lng, saved.originPoint.lat]).addTo(nextMap);
         new mapboxgl.Marker({ color: '#D42E12' }).setLngLat([saved.destinationPoint.lng, saved.destinationPoint.lat]).addTo(nextMap);
         updateInlineRouteSelection(nextMap);
+        if (routePaneMap && routeMapLocation) {
+          const point = routeMapLocation;
+          routeMapLocation = null;
+          try {
+            nextMap.easeTo({ center: [point.lng, point.lat], zoom: Math.max(14, nextMap.getZoom()), duration: 0 });
+            updateRouteLocationStatus('Route map centered on your location. One-shot only.');
+          } catch {
+            updateRouteLocationStatus('Location found, but the route map could not recenter.');
+          }
+        }
       });
       nextMap.on('error', () => { if (generation === mapGeneration) showFallback(); });
     } catch { if (generation === mapGeneration) showFallback(); }
   }
-  function renderInlineRouteMap() {
-    return renderViewerMap('route-inline-map', 'route-inline-fallback', false);
+  function renderInlineRouteMap(containerId = 'route-inline-map-route', fallbackId = 'route-inline-fallback-route') {
+    return renderViewerMap(containerId, fallbackId, false);
   }
 
   async function manualLocation() {
-    const input = document.getElementById('picker-manual-input');
-    const value = input?.value.trim();
+    const value = document.getElementById('picker-manual-input')?.value.trim();
     if (!value) return;
+    searchQuery = value;
+    const generation = ++searchGeneration;
+    const field = pickerField;
+    searchResults = []; searchMessage = 'Searching…'; updateSearchResults();
     try {
       const response = await fetch(`/api/location?q=${encodeURIComponent(value)}`);
-      const data = await runtime.readJson(response, 'Location lookup unavailable.');
-      draftState[pickerField] = data.label || value;
-      draftState[`${pickerField}Point`] = response.ok && data.point ? data.point : null;
-    } catch { draftState[pickerField] = value; draftState[`${pickerField}Point`] = null; }
-    closePicker();
+      const data = await runtime.readJson(response, 'Location search unavailable.');
+      if (generation !== searchGeneration || field !== pickerField) return;
+      if (!response.ok) throw new Error(data.error || 'Location search unavailable.');
+      searchResults = (data.results || []).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+      searchMessage = searchResults.length ? 'Choose the matching place. Coordinates show its map position.' : 'No matching places. Try another name or postal code.';
+    } catch (error) { if (generation !== searchGeneration || field !== pickerField) return; searchMessage = error.message; }
+    updateSearchResults();
+  }
+
+  function updateSearchResults() {
+    const host = document.getElementById('place-results');
+    if (!host) return;
+    host.innerHTML = searchResultsMarkup();
+    host.querySelectorAll('[data-place-index]').forEach(button => button.onclick = () => {
+      const item = searchResults[Number(button.dataset.placeIndex)];
+      if (item) choosePlace(item.label || item.name, {lat:item.lat,lng:item.lng});
+    });
   }
 
   function locate() {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) { searchMessage = 'Current location is unavailable. Search for a place instead.'; updateSearchResults(); return; }
     navigator.geolocation.getCurrentPosition((position) => {
       mapPosition.center = { lat: position.coords.latitude, lng: position.coords.longitude };
       mapPosition.zoom = 16.5;
       mapPosition.label = 'My location';
       if (map) map.easeTo({ center: [mapPosition.center.lng, mapPosition.center.lat], zoom: mapPosition.zoom }); else updatePickerDom();
-    }, () => {}, { timeout: 7000, maximumAge: 60000 });
+    }, () => { searchMessage = 'Could not get your location. Search or choose a map pin.'; updateSearchResults(); }, { timeout: 7000, maximumAge: 0 });
+  }
+
+  function routeLocationMessage(error) {
+    if (error?.code === 1) return 'Location permission was not granted.';
+    if (error?.code === 2) return 'Current location is unavailable.';
+    if (error?.code === 3) return 'Location lookup timed out.';
+    return 'Could not get your current location.';
+  }
+
+  function updateRouteLocationStatus(message) {
+    const status = document.getElementById('route-location-status');
+    if (status) status.textContent = message;
+  }
+
+  function recenterRouteMap() {
+    const button = shell.querySelector('[data-route-action="recenter-route"]');
+    if (routeLocationInFlight) return;
+    if (!navigator.geolocation) {
+      updateRouteLocationStatus('Device location is not supported here.');
+      return;
+    }
+
+    routeLocationInFlight = true;
+    if (button) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+    }
+    updateRouteLocationStatus('Finding your location once…');
+    navigator.geolocation.getCurrentPosition((position) => {
+      routeLocationInFlight = false;
+      const point = { lat: position.coords.latitude, lng: position.coords.longitude };
+      routeMapLocation = point;
+      const mapContainer = map?.getContainer?.();
+      const routeMapActive = map && mapContainer?.id === 'route-inline-map-route';
+      if (routeMapActive) {
+        try {
+          const zoom = typeof map.getZoom === 'function' ? Math.max(14, map.getZoom()) : 14;
+          map.easeTo({ center: [point.lng, point.lat], zoom, duration: 0 });
+          routeMapLocation = null;
+          updateRouteLocationStatus('Route map centered on your location. One-shot only.');
+        } catch {
+          updateRouteLocationStatus('Location found, but the route map could not recenter.');
+        }
+      } else if (!window.mapboxgl) {
+        routeMapLocation = null;
+        updateRouteLocationStatus('Location found, but the route map is unavailable here.');
+      } else {
+        updateRouteLocationStatus('Location found; the route map will recenter when ready.');
+      }
+      const activeButton = shell.querySelector('[data-route-action="recenter-route"]');
+      if (activeButton) {
+        activeButton.disabled = false;
+        activeButton.removeAttribute('aria-busy');
+      }
+    }, (error) => {
+      routeLocationInFlight = false;
+      routeMapLocation = null;
+      updateRouteLocationStatus(routeLocationMessage(error));
+      const activeButton = shell.querySelector('[data-route-action="recenter-route"]');
+      if (activeButton) {
+        activeButton.disabled = false;
+        activeButton.removeAttribute('aria-busy');
+      }
+    }, { enableHighAccuracy: false, timeout: 7000, maximumAge: 60000 });
   }
 
   function normalizedMode(value) {
@@ -1592,24 +1688,21 @@
     return disruptionTools.relevantAlerts(itinerary, payload);
   }
 
-  function trainMatch(leg, payload) {
-    const updates = payload?.updates || [];
+  function trainMatch(leg, payload, now = Date.now()) {
     const routeKey = trainLineKey(leg.routeName || leg.lineName);
-    const routeUpdates = updates.filter((update) => !update.routeId || !routeKey || trainLineKey(update.routeId) === routeKey);
-    const candidates = routeUpdates.length ? routeUpdates : updates.filter((update) => update.stops?.some((stop) => sameStop(stop.stopId, leg.fromId) || sameStop(stop.stopId, leg.toId)));
-    const update = candidates.find((item) => item.stops?.some((stop) => sameStop(stop.stopId, leg.fromId)) && item.stops?.some((stop) => sameStop(stop.stopId, leg.toId))) || candidates.find((item) => item.stops?.some((stop) => sameStop(stop.stopId, leg.fromId))) || candidates[0];
-    if (!update) return null;
-
-    const orderedStops = [...(update.stops || [])].sort((a, b) => (a.stopSequence || 0) - (b.stopSequence || 0));
-    const fromStop = orderedStops.find((stop) => sameStop(stop.stopId, leg.fromId)) || orderedStops.find((stop) => stop.departureTime || stop.arrivalTime);
-    const toStop = orderedStops.find((stop) => sameStop(stop.stopId, leg.toId)) || [...orderedStops].reverse().find((stop) => stop.arrivalTime || stop.departureTime);
-    const alert = (payload.alerts || []).find((item) => (item.header || item.description) && trainAlertMatches(leg, item));
-    return {
-      departureTime: fromStop?.departureTime || fromStop?.arrivalTime || 0,
-      arrivalTime: toStop?.arrivalTime || toStop?.departureTime || 0,
-      delay: fromStop?.departureDelay || fromStop?.arrivalDelay || update.delay || 0,
-      alertText: alert?.header || alert?.description || '',
-    };
+    const matches = (payload?.updates || []).filter(update => !update.routeId || trainLineKey(update.routeId) === routeKey).flatMap(update => {
+      const stops = [...(update.stops || [])].sort((a,b) => (a.stopSequence || 0)-(b.stopSequence || 0));
+      const fromIndex = stops.findIndex(stop => sameStop(stop.stopId,leg.fromId));
+      const toIndex = stops.findIndex((stop,index) => index > fromIndex && sameStop(stop.stopId,leg.toId));
+      if (fromIndex < 0 || toIndex <= fromIndex) return [];
+      const from = stops[fromIndex], to = stops[toIndex];
+      const departureTime = toTimestamp(from.departureTime || from.arrivalTime);
+      const arrivalTime = toTimestamp(to.arrivalTime || to.departureTime);
+      if (!departureTime || departureTime < now || !arrivalTime || arrivalTime < departureTime) return [];
+      return [{departureTime,arrivalTime,delay:from.departureDelay || from.arrivalDelay || update.delay || 0}];
+    }).sort((a,b) => a.departureTime-b.departureTime);
+    const alert = (payload?.alerts || []).find(item => (item.header || item.description) && trainAlertMatches(leg,item));
+    return matches.length || alert ? {...(matches[0] || {}),alertText:alert?.header || alert?.description || ''} : null;
   }
 
   async function liveTrain(itinerary, signal) {
@@ -1644,17 +1737,21 @@
     const current = routeState.data;
     const choice = alternativeOptions(current).find((option) => option.key === key);
     if (!choice || itinerarySignature(choice.itinerary) === itinerarySignature(current)) return;
+    if (activeSession) { recoveryOpen = true; formError = 'Choose your current starting point before changing routes.'; render(); return; }
     liveRequests.abort();
     const selected = { ...choice.itinerary, alternatives: current.alternatives, choiceLabel: choice.label };
     const liveOpen = liveWindowOpen(selected);
     const request = liveOpen ? liveRequests.start() : null;
     selectedLegIndex = null;
+    expandedLiveLegIndex = null;
     liveUpdatedAt = 0;
     liveRefreshInFlight = liveOpen;
     liveRefreshStatus = liveOpen ? 'loading' : 'idle';
+    if (activeSession) { activeSession = journeyTools.replaceRoute(activeSession,selected,{confirmed:true,plan:saved}); persistSession(); }
+    saved.usualRouteSignature = itinerarySignature(selected);
     routeState = { status: 'ready', data: selected, error: '' };
     render();
-    if (!liveOpen) return;
+    if (!liveOpen) { selected.legs.forEach(leg => { if (leg.mode === 'BUS') leg.liveStatus = 'unavailable'; if (leg.mode === 'SUBWAY') leg.trainStatus = 'unavailable'; }); render(); return; }
     try {
       await Promise.all([liveBus(selected, request.controller.signal), liveTrain(selected, request.controller.signal)]);
       if (liveRequests.isCurrent(request) && routeState.data === selected) { const degraded = liveHasError(selected); if (!degraded && hasLiveTiming(selected)) liveUpdatedAt = Date.now(); liveRefreshStatus = degraded ? 'degraded' : (hasLiveTiming(selected) ? 'ready' : 'idle'); render(); }
@@ -1663,8 +1760,9 @@
     }
   }
 
-  async function routeData({ preserveCurrent = false, fromNow = false } = {}) {
+  async function routeData({ preserveCurrent = false, fromNow = false, origin = null } = {}) {
     if (preserveCurrent && routeState.status === 'rerouting') return;
+    if (!fromNow && saved.overdue) { routeState = {status:'error',data:null,error:'This departure has passed. Replan from your current starting point.'}; render(); return; }
     const previous = (preserveCurrent || fromNow) ? routeState.data : null;
     const previousLiveState = snapshotLiveState(previous);
     dismissedNotice = '';
@@ -1674,21 +1772,24 @@
     const previousUpdatedAt = liveUpdatedAt;
     const previousRefreshStatus = liveRefreshStatus;
     selectedLegIndex = null;
+    expandedLiveLegIndex = null;
     liveUpdatedAt = 0;
     liveRefreshStatus = 'loading';
     routeState = { status: previous ? 'rerouting' : 'loading', data: previous || null, error: '', notice: '' }; render();
     const savedRoute = saved;
-    const start = `${savedRoute.originPoint.lat},${savedRoute.originPoint.lng}`; const end = `${savedRoute.destinationPoint.lat},${savedRoute.destinationPoint.lng}`; const time = fromNow ? '' : (savedRoute.departureTime ? `&time=${encodeURIComponent(savedRoute.departureTime)}` : ''); const timeMode = `&timeMode=${encodeURIComponent(fromNow ? 'depart' : (savedRoute.timeMode === 'arrive' ? 'arrive' : 'depart'))}`;
+    const routeOrigin = origin || savedRoute.originPoint;
+    const start = `${routeOrigin.lat},${routeOrigin.lng}`; const end = `${savedRoute.destinationPoint.lat},${savedRoute.destinationPoint.lng}`; const time = fromNow || savedRoute.timeMode === 'now' ? '' : (savedRoute.departureTime ? `&time=${encodeURIComponent(savedRoute.departureTime)}` : ''); const timeMode = `&timeMode=${encodeURIComponent(fromNow ? 'depart' : (savedRoute.timeMode === 'arrive' ? 'arrive' : 'depart'))}`;
     let liveRequest = null;
     try {
-      const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}`, { signal: request.controller.signal });
+      const response = await fetch(`/api/route?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${time}${timeMode}${fromNow || savedRoute.timeMode === 'now' ? '' : '&date=' + encodeURIComponent(savedRoute.date || singaporeDate())}`, { signal: request.controller.signal });
       const data = await runtime.readJson(response, 'Routing unavailable.');
       if (!routeRequests.isCurrent(request)) return;
       if (!response.ok) throw new Error(data.error || 'Routing unavailable.');
       if (!runtime.isRoutePayload(data)) throw new Error('Routing returned an invalid itinerary.');
       const routed = normalizeRoute(data);
       if (!routed) throw new Error('No public-transport itinerary.');
-      let itinerary = routed;
+      const preferred = window.JalanRouteAlternatives.preferredRoute?.(routed,{usualSignature:savedRoute.usualRouteSignature,alerts:previous?.liveAlerts || []});
+      let itinerary = {...(preferred?.itinerary || routed),alternatives:routed.alternatives};
       let notice = fromNow ? 'Route updated from the current time.' : '';
       if (preserveCurrent && previous) {
         const candidate = disruptionTools.bestUnblocked(routed, previous.liveAlerts || []);
@@ -1703,8 +1804,15 @@
         itinerary = { ...candidate, alternatives: routed.alternatives, choiceLabel: 'Rerouted' };
         notice = `Rerouted via ${disruptionTools.serviceLabel(itinerary)} to avoid the affected service.`;
       }
+      if (savedRoute.usualRouteSignature && preferred?.detail) notice = [notice,preferred.detail].filter(Boolean).join(' ');
+      if (activeSession && (fromNow || itinerarySignature(itinerary) !== itinerarySignature(previous))) {
+        if (!window.confirm('Use this new route from your confirmed starting point? This replaces the current journey steps.')) { routeState = {status:'ready',data:previous,error:'',notice:'Current journey kept.'}; render(); return; }
+        activeSession = journeyTools.replaceRoute(activeSession,itinerary,{confirmed:true,confirmedOrigin:routeOrigin,plan:{...savedRoute,originPoint:routeOrigin,date:singaporeDate(),timeMode:'now'}}); persistSession();
+      }
+      if (fromNow) saved = {...savedRoute,date:singaporeDate(),timeMode:'now',originPoint:routeOrigin,overdue:false};
       routeState = { status: 'ready', data: itinerary, error: '', notice };
       if (!liveWindowOpen(itinerary)) {
+        itinerary.legs.forEach(leg => { if (leg.mode === 'BUS') leg.liveStatus = 'unavailable'; if (leg.mode === 'SUBWAY') leg.trainStatus = 'unavailable'; });
         liveRefreshInFlight = false;
         liveRefreshStatus = 'idle';
         render();
@@ -1742,9 +1850,11 @@
   }
 
   function bind() {
+    shell.querySelectorAll('[data-routine-day]').forEach(input => input.onchange = () => { draftState.days = [...shell.querySelectorAll('[data-routine-day]:checked')].map(el => Number(el.dataset.routineDay)); });
     shell.querySelectorAll('[data-route-pick]').forEach((button) => { button.onclick = () => openPicker(button.dataset.routePick); });
     const input = document.getElementById('picker-manual-input'); const useButton = shell.querySelector('[data-route-action="manual"]');
-    if (input) { input.oninput = () => { useButton.disabled = !input.value.trim(); }; input.onkeydown = (event) => { if (event.key === 'Enter') manualLocation(); }; }
+    if (input) { input.oninput = () => { searchQuery = input.value; searchGeneration++; searchResults = []; searchMessage = ''; updateSearchResults(); useButton.disabled = !input.value.trim(); }; input.onkeydown = (event) => { if (event.key === 'Enter') manualLocation(); }; }
+    const dateInput = document.getElementById('route-date-input'); if (dateInput) dateInput.oninput = () => { draftState.date = dateInput.value; };
     const timeInput = document.getElementById('route-time-input'); if (timeInput) timeInput.oninput = () => { draftState.departureTime = timeInput.value || '08:30'; };
     const routineNameInput = document.getElementById('route-routine-name'); if (routineNameInput) routineNameInput.oninput = () => { draftState.name = routineNameInput.value; };
     const homeWorkInput = document.getElementById('route-home-work'); if (homeWorkInput) homeWorkInput.onchange = () => { draftState.homeWorkLabel = homeWorkInput.value || null; };
@@ -1764,24 +1874,45 @@
         else if (action === 'new-route') startNewRoute();
         else if (action === 'bus') openBusView();
         else if (action === 'edit') beginRouteEdit();
-        else if (action === 'save') { if (draftState.origin && draftState.destination) { save({ ...draftState, id: draftState.id || newRouteId(), name: draftState.name.trim() || 'Saved commute', updatedAt: new Date().toISOString() }); dashboardPane = 'now'; routeState = { status: 'idle', data: null, error: '' }; render(); } }
+        else if (action === 'plan') planDraft();
+        else if (action === 'tomorrow') { draftState.date = singaporeDate(Date.now()+86400000); formError = ''; render(); }
+        else if (action === 'save-form') { draftState = draft(routineById(routeRoutineId(saved)) ? {...routineStorage.routeFromRoutine(routineById(routeRoutineId(saved))),date:saved.date} : saved); if (draftState.days === null) draftState.days = [0,1,2,3,4,5,6]; if (draftState.timeMode === 'now') draftState.timeMode = 'depart'; saveFormOpen = true; render(); }
+        else if (action === 'cancel-save') { saveFormOpen = false; formError = ''; render(); }
+        else if (action === 'save') {
+          if (!draftState.days?.length) { formError = 'Choose at least one repeat day.'; render(); return; }
+          if (save({ ...draftState, timeMode:draftState.timeMode === 'now' ? 'depart' : draftState.timeMode, usualRouteSignature:itinerarySignature(routeState.data), id:draftState.id || newRouteId(), name:draftState.name.trim() || 'Saved journey' })) { saveFormOpen = false; }
+          render();
+        }
+        else if (action === 'save-usual') { const record = routineById(routeRoutineId(saved)); if (record) { const value = {...routineStorage.routeFromRoutine(record),usualRouteSignature:itinerarySignature(routeState.data)}; const current = saved; if (save(value)) { saved = {...current,usualRouteSignature:value.usualRouteSignature}; routeState.notice = 'Usual route saved.'; } render(); } }
+        else if (action === 'saved-category') { savedCategory = button.dataset.category; render(); }
+        else if (action === 'start') { activeSession = journeyTools.start({occurrenceId:routeRoutineId(saved)+':'+(saved.date || singaporeDate()),itinerary:routeState.data,origin:saved.originPoint,destination:saved.destinationPoint,plan:saved}); persistSession(); render(); }
+        else if (action === 'advance') { activeSession = journeyTools.advance(activeSession,routeState.data); persistSession(); render(); }
+        else if (action === 'finish') { completedOccurrences.push(activeSession.occurrenceId); try {sessionStorage.setItem('jalan-lite-completed-occurrences',JSON.stringify(completedOccurrences));} catch {} journeyTools.clear(); activeSession = null; saved = load(); routeState = {status:'idle',data:null,error:''}; render(); }
+        else if (action === 'recover' || action === 'refresh-now') { recoveryOpen = true; render(); }
+        else if (action === 'cancel-recovery') { recoveryOpen = false; render(); }
+        else if (action === 'recover-search') openPicker('recovery');
+        else if (action === 'recover-last') { recoveryOrigin = activeSession ? journeyTools.guidance(activeSession,routeState.data).lastConfirmedPoint : saved.originPoint; recoveryOpen = false; routeData({fromNow:true,origin:recoveryOrigin}); }
+        else if (action === 'recover-location') { if (!navigator.geolocation) { formError = 'Location unavailable. Search or choose a pin.'; render(); return; } navigator.geolocation.getCurrentPosition(position => { recoveryOrigin = {lat:position.coords.latitude,lng:position.coords.longitude}; recoveryOpen = false; routeData({fromNow:true,origin:recoveryOrigin}); },() => {formError = 'Location unavailable. Search or choose a pin.'; render();},{timeout:10000,maximumAge:0}); }
+        else if (action === 'skip-today') dayException('skip');
+        else if (action === 'change-today') dayException('time');
+        else if (action === 'return') { const outbound = saved; if (startNewRoute() === false) return; draftState = draft({...outbound,id:newRouteId(),name:'Return journey',origin:outbound.destination,destination:outbound.origin,originPoint:outbound.destinationPoint,destinationPoint:outbound.originPoint,linkedRoutineId:routeRoutineId(outbound),exceptions:{},date:singaporeDate(),timeMode:'depart',departureTime:'18:00',usualRouteSignature:''}); render(); }
         else if (action === 'clear') { cancelAsyncWork(); dashboardPane = 'now'; const replacement = clearSavedRoute(); saved = replacement; draftState = draft(replacement); routeState = { status: 'idle', data: null, error: '' }; liveUpdatedAt = 0; liveRefreshStatus = 'idle'; render(); }
         else if (action === 'cancel') closePicker();
-        else if (action === 'confirm') { draftState[pickerField] = mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label; draftState[`${pickerField}Point`] = { ...mapPosition.center }; closePicker(); }
+        else if (action === 'confirm') choosePlace(mapPosition.label === 'Singapore' ? 'Pinned location' : mapPosition.label, { ...mapPosition.center });
         else if (action === 'manual') manualLocation();
         else if (action === 'locate') locate();
+        else if (action === 'recenter-route') recenterRouteMap();
+        else if (action === 'toggle-live-leg') toggleLiveLeg(button);
         else if (action === 'dashboard-pane') setDashboardPane(button.dataset.dashboardPane);
         else if (action === 'dismiss-notice') { dismissedNotice = routeState.notice || ''; button.closest('.floating-route-notice')?.remove(); }
-        else if (action === 'refresh-now') routeData({ fromNow: true });
-        else if (action === 'refresh') { routeState = { status: 'idle', data: null, error: '' }; render(); }
+        else if (action === 'refresh') { if (activeSession) recoveryOpen = true; else routeState = { status: 'idle', data: null, error: '' }; render(); }
         else if (action === 'refresh-live') refreshLiveTimings();
         else if (action === 'focus') enterFocusMode();
         else if (action === 'exit-focus') exitFocusMode();
-        else if (action === 'notifications') enableNotifications();
-        else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode === 'arrive' ? 'arrive' : 'depart'; render(); }
+        else if (action === 'time-mode') { draftState.timeMode = button.dataset.timeMode; render(); }
         else if (action === 'leg' && routeState.data) { const index = Number(button.dataset.routeLeg); if (Number.isInteger(index) && index >= 0 && index < routeState.data.legs.length) { selectedLegIndex = index; if (viewing) dashboardPane = 'route'; else setDashboardPane('route'); updateInlineRouteSelection(); } }
         else if (action === 'alternative') selectAlternative(button.dataset.routeAlternative);
-        else if (action === 'reroute') routeData({ preserveCurrent: true });
+        else if (action === 'reroute') { if (activeSession) { recoveryOpen = true; render(); } else routeData({ preserveCurrent:true,fromNow:true }); }
         else if (action === 'viewer' && routeState.data) { selectedLegIndex = null; setDashboardPane('route'); }
         else if (action === 'close-viewer') { viewing = false; selectedLegIndex = null; render(); refreshLiveTimings(); }
       };
@@ -1801,7 +1932,10 @@
     syncTemporalClock();
   });
 
-  launcher.onclick = () => { shell.hidden = false; launcher.hidden = true; render(); };
+  launcher.onclick = () => { shell.hidden = false; launcher.hidden = true; openRoutineLibrary(); };
   document.body.append(shell, launcher);
-  render();
+  const nextOccurrence = !activeSession && scheduleTools.nextRelevant(routineRecords());
+  const nextSaved = nextOccurrence && routineById(nextOccurrence.routineId);
+  if (nextSaved?.type === 'bus') openBusView(nextSaved.legacy?.id || nextSaved.id.replace(/^bus:/, ''));
+  else render();
 })();

@@ -34,15 +34,16 @@ const savedRoute = {
   updatedAt: '2026-08-25T00:00:00.000Z',
 };
 
-test('adapts legacy bus presets without writing the new key', () => {
+test('adapts legacy bus presets and migrates them to the new key', () => {
   const storage = memoryStorage({
     [routines.STORAGE_KEYS.presets]: JSON.stringify([busPreset]),
   });
 
   const result = routines.load(storage);
 
-  assert.equal(result.source, 'legacy');
-  assert.equal(result.needsMigration, true);
+  assert.equal(result.source, 'routines');
+  assert.equal(result.migrated, true);
+  assert.equal(result.needsMigration, false);
   assert.equal(result.routines.length, 1);
   assert.deepEqual(result.routines[0], {
     id: 'bus:commute-1',
@@ -65,7 +66,8 @@ test('adapts legacy bus presets without writing the new key', () => {
     notifications: { disruptionAlerts: false, routeAlerts: false },
     legacy: { key: routines.STORAGE_KEYS.presets, id: 'commute-1' },
   });
-  assert.equal(storage.raw(routines.STORAGE_KEYS.routines), undefined);
+  assert.equal(JSON.parse(storage.raw(routines.STORAGE_KEYS.routines)).version, 2);
+  assert.equal(storage.raw(routines.STORAGE_KEYS.presets), JSON.stringify([busPreset]));
 });
 
 test('adapts the single legacy route and preserves incomplete points safely', () => {
@@ -75,7 +77,8 @@ test('adapts the single legacy route and preserves incomplete points safely', ()
 
   const result = routines.load(storage);
 
-  assert.equal(result.source, 'legacy');
+  assert.equal(result.source, 'routines');
+  assert.equal(result.migrated, true);
   assert.equal(result.routines.length, 1);
   assert.equal(result.routines[0].id, 'route:route-1');
   assert.equal(result.routines[0].schedule.departureTime, '08:30');
@@ -85,7 +88,7 @@ test('adapts the single legacy route and preserves incomplete points safely', ()
 
 test('prefers a valid new envelope over legacy keys, including an empty envelope', () => {
   const storage = memoryStorage({
-    [routines.STORAGE_KEYS.routines]: JSON.stringify({ version: 1, routines: [] }),
+    [routines.STORAGE_KEYS.routines]: JSON.stringify({ version: 2, routines: [] }),
     [routines.STORAGE_KEYS.presets]: JSON.stringify([busPreset]),
     [routines.STORAGE_KEYS.routes]: JSON.stringify(savedRoute),
   });
@@ -164,8 +167,12 @@ test('converts unified routines back to the existing bus and route record shapes
     destination: 'Work',
     originPoint: savedRoute.originPoint,
     destinationPoint: savedRoute.destinationPoint,
+    days: null,
     departureTime: '08:30',
     timeMode: 'depart',
+    usualRouteSignature: '',
+    linkedRoutineId: null,
+    exceptions: {},
   });
 });
 
@@ -198,4 +205,94 @@ test('returns a safe empty envelope when storage is unavailable', () => {
   assert.equal(result.source, 'empty');
   assert.equal(saved.ok, false);
   assert.deepEqual(saved.routines, []);
+});
+
+test('migrates a v1 unified envelope once and leaves every legacy key untouched', () => {
+  const oldRoutine = routines.routineFromRoute({ ...savedRoute, days: [1, 2, 3, 4, 5] });
+  const oldRaw = JSON.stringify({ version: 1, routines: [oldRoutine] });
+  const storage = memoryStorage({
+    [routines.STORAGE_KEYS.routinesV1]: oldRaw,
+    [routines.STORAGE_KEYS.routes]: JSON.stringify(savedRoute),
+    [routines.STORAGE_KEYS.presets]: JSON.stringify([busPreset]),
+  });
+
+  const first = routines.load(storage);
+  const second = routines.load(storage);
+
+  assert.equal(first.ok, true);
+  assert.equal(first.migrated, true);
+  assert.equal(first.routines.length, 1);
+  assert.equal(second.migrated, false);
+  assert.deepEqual(second.routines, first.routines);
+  assert.equal(storage.raw(routines.STORAGE_KEYS.routinesV1), oldRaw);
+  assert.equal(storage.raw(routines.STORAGE_KEYS.routes), JSON.stringify(savedRoute));
+  assert.equal(storage.raw(routines.STORAGE_KEYS.presets), JSON.stringify([busPreset]));
+});
+
+test('a failed migration write retains the legacy data and reports failure', () => {
+  const values = new Map([[routines.STORAGE_KEYS.presets, JSON.stringify([busPreset])]]);
+  const storage = {
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key) {
+      if (key === routines.STORAGE_KEYS.routines) throw new Error('quota');
+      values.set(key, String(key));
+    },
+    removeItem(key) { values.delete(key); },
+    raw(key) { return values.get(key); },
+  };
+
+  const result = routines.load(storage);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.needsMigration, true);
+  assert.equal(result.error, 'quota');
+  assert.equal(storage.raw(routines.STORAGE_KEYS.routines), undefined);
+  assert.equal(storage.raw(routines.STORAGE_KEYS.presets), JSON.stringify([busPreset]));
+});
+
+test('a failed save reports failure while retaining the previous v2 envelope', () => {
+  const storage = memoryStorage();
+  const original = routines.routineFromRoute(savedRoute);
+  assert.equal(routines.save([original], storage).ok, true);
+  const oldRaw = storage.raw(routines.STORAGE_KEYS.routines);
+  const originalSetItem = storage.setItem;
+  storage.setItem = (key, value) => {
+    if (key === routines.STORAGE_KEYS.routines) {
+      storage.raw = () => oldRaw;
+      throw new Error('quota');
+    }
+    return originalSetItem(key, value);
+  };
+
+  const result = routines.save([], storage);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'quota');
+  assert.equal(storage.raw(routines.STORAGE_KEYS.routines), oldRaw);
+});
+
+test('route flattened schedule metadata round-trips and return routines reverse the journey', () => {
+  const record = {
+    ...savedRoute,
+    days: [5, 1, 5],
+    usualRouteSignature: 'home-work',
+    linkedRoutineId: 'route:return',
+    exceptions: {
+      '2026-08-31': { skip: true },
+      '2026-09-01': { departureTime: '09:15', timeMode: 'arrive' },
+    },
+  };
+  const routine = routines.routineFromRoute(record);
+  const flattened = routines.routeFromRoutine(routine);
+  const returned = routines.createReturnRoutine(routine);
+
+  assert.deepEqual(routine.schedule.days, [1, 5]);
+  assert.equal(routine.usualRouteSignature, 'home-work');
+  assert.equal(routine.linkedRoutineId, 'route:return');
+  assert.deepEqual(flattened.days, [1, 5]);
+  assert.deepEqual(flattened.exceptions, record.exceptions);
+  assert.equal(returned.route.origin, routine.route.destination);
+  assert.equal(returned.route.destination, routine.route.origin);
+  assert.equal(returned.linkedRoutineId, routine.id);
+  assert.equal(returned.schedule.departureTime, null);
 });

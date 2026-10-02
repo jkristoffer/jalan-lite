@@ -1,5 +1,5 @@
 
-const { getOneMapToken } = require('./_onemap-auth');
+const { withOneMapToken } = require('./_onemap-auth');
 const { fetchJson, safeUpstreamFailure } = require('./_upstream');
 const { clockFromIso } = require('../train-schedule')._shared;
 
@@ -15,7 +15,47 @@ function sgDateTime(now = new Date()) {
     hourCycle: 'h23',
   }).formatToParts(now);
   const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-  return { date: p.month + '-' + p.day + '-' + p.year, time: p.hour + ':' + p.minute + ':' + p.second, hour: Number(p.hour) };
+  return {
+    date: p.month + '-' + p.day + '-' + p.year,
+    time: p.hour + ':' + p.minute + ':' + p.second,
+    hour: Number(p.hour),
+  };
+}
+
+function isoDateFromApiDate(value) {
+  const [month, day, year] = String(value || '').split('-');
+  return year && month && day ? year + '-' + month + '-' + day : '';
+}
+
+function utcTimestamp(year, month, day, hour = 0, minute = 0, second = 0) {
+  const value = new Date(0);
+  value.setUTCFullYear(year, month - 1, day);
+  value.setUTCHours(hour, minute, second, 0);
+  return value.getTime();
+}
+
+function parseIsoDate(value) {
+  const iso = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const [year, month, day] = iso.split('-').map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return null;
+  const timestamp = utcTimestamp(year, month, day);
+  const check = new Date(timestamp);
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null;
+  return {
+    iso,
+    api: String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0') + '-' + String(year).padStart(4, '0'),
+    year,
+    month,
+    day,
+  };
+}
+
+function sgTimestampFromIsoDate(date, time) {
+  const parsed = parseIsoDate(date);
+  if (!parsed || !validTime(time)) return null;
+  const [hour, minute, second = '0'] = time.split(':').map(Number);
+  return utcTimestamp(parsed.year, parsed.month, parsed.day, hour - 8, minute, second);
 }
 
 function addDay(date) {
@@ -37,7 +77,7 @@ function shiftSgDateTime(date, time, offsetMinutes) {
 function sgTimestamp(date, time) {
   const [month, day, year] = date.split('-').map(Number);
   const [hour, minute, second = '0'] = time.split(':').map(Number);
-  return Date.UTC(year, month - 1, day, hour, minute, second) - 8 * 60 * 60 * 1000;
+  return utcTimestamp(year, month, day, hour - 8, minute, second);
 }
 
 function validCoord(value) {
@@ -83,7 +123,7 @@ function isNoRoute(response, data) {
     || /no .*route|no itinerary|not found/i.test(message);
 }
 
-async function requestRoute({ token, start, end, date, time, arriveBy = false, numItineraries = '3', maxWalkDistance = '2000' }) {
+async function requestRoute({ token, start, end, date, time, arriveBy = false, numItineraries = '3', maxWalkDistance = '2000', signal }) {
   const url = new URL('https://www.onemap.gov.sg/api/public/routingsvc/route');
   url.searchParams.set('start', start);
   url.searchParams.set('end', end);
@@ -97,7 +137,7 @@ async function requestRoute({ token, start, end, date, time, arriveBy = false, n
 
   return fetchJson(
     url,
-    { headers: { Authorization: token } },
+    { headers: { Authorization: token }, signal },
     {
       service: 'OneMap routing',
       allowStatuses: [404],
@@ -106,13 +146,20 @@ async function requestRoute({ token, start, end, date, time, arriveBy = false, n
   );
 }
 
-async function requestArriveBy({ token, start, end, date, time }) {
+function requestRouteWithAuth(args, { signal } = {}) {
+  return withOneMapToken(
+    (token) => requestRoute({ ...args, token, signal }),
+    { signal },
+  );
+}
+
+async function requestArriveBy({ start, end, date, time }, { signal } = {}) {
   const target = sgTimestamp(date, time);
   const probeOffsets = [0, 30, 60, 90, 120, 180, 240];
   const probes = await Promise.all(probeOffsets.map(async (offset) => {
     const probe = shiftSgDateTime(date, time, -offset);
     try {
-      return { offset, ...(await requestRoute({ token, start, end, date: probe.date, time: probe.time, arriveBy: false })) };
+      return { offset, ...(await requestRouteWithAuth({ start, end, date: probe.date, time: probe.time, arriveBy: false }, { signal })) };
     } catch (error) {
       return { offset, error };
     }
@@ -174,11 +221,17 @@ module.exports = async function handler(req, res) {
     const requestedTime = String(req.query?.time || '').trim();
     const requestedMode = requestedTime && String(req.query?.timeMode || '').trim().toLowerCase() === 'arrive' ? 'arrive' : 'depart';
     const arriveBy = requestedMode === 'arrive';
+    const requestUrl = new URL(req.url || '', 'https://dailyloop.local');
+    const requestedDate = String(req.query?.date
+      || requestUrl.searchParams.get('date')
+      || '').trim();
 
     if (!validCoord(start) || !validCoord(end)) return res.status(400).json({ error: 'Valid start and end coordinates are required.' });
     if (requestedTime && !validTime(requestedTime)) return res.status(400).json({ error: 'Time must use HH:MM format.' });
+    const explicitDate = requestedDate ? parseIsoDate(requestedDate) : null;
+    if (requestedDate && !explicitDate) return res.status(400).json({ error: 'Date must use YYYY-MM-DD format and be a valid Singapore calendar date.' });
+    if (requestedDate && !requestedTime) return res.status(400).json({ error: 'A date requires a scheduled time in HH:MM format.' });
 
-    const requestUrl = new URL(req.url || '', 'https://dailyloop.local');
     const benchmarkAt = String(req.query?.requestedClock
       || req.query?.requestedclock
       || requestUrl.searchParams.get('requestedClock')
@@ -186,23 +239,27 @@ module.exports = async function handler(req, res) {
       || '').trim();
     const benchmarkClock = benchmarkAt ? clockFromIso(benchmarkAt) : null;
     if (benchmarkAt && !benchmarkClock) return res.status(400).json({ error: 'requestedClock must be a valid timestamp.' });
-    const token = await getOneMapToken();
-    const now = sgDateTime(benchmarkClock ? new Date(benchmarkClock.epochMs) : new Date());
+    const now = sgDateTime(benchmarkClock ? new Date(benchmarkClock.epochMs) : new Date(Date.now()));
     const planned = Boolean(requestedTime);
+    const scheduleDate = explicitDate || parseIsoDate(isoDateFromApiDate(now.date));
+    if (planned && sgTimestampFromIsoDate(scheduleDate.iso, requestedTime) < (benchmarkClock ? benchmarkClock.epochMs : Date.now())) {
+      return res.status(400).json({ error: 'The scheduled date and time must be in the future in Asia/Singapore.' });
+    }
+    const requestDate = scheduleDate.api;
     const queryTime = planned ? requestedTime + ':00' : now.time;
 
     if (arriveBy) {
-      const arrived = await requestArriveBy({ token, start, end, date: now.date, time: queryTime });
+      const arrived = await requestArriveBy({ start, end, date: requestDate, time: queryTime }, { signal: req.signal });
       if (arrived) {
-        arrived._jalan = { service: 'planned', requestedDate: now.date, requestedTime: queryTime, timeMode: 'arrive' };
+        arrived._jalan = { service: 'planned', requestedDate: requestDate, requestedTime: queryTime, timeMode: 'arrive' };
         return res.status(200).json(arrived);
       }
       return res.status(404).json({ error: 'No public transport route was found arriving by ' + requestedTime + '.' });
     }
 
-    const current = await requestRoute({ token, start, end, date: now.date, time: queryTime, arriveBy: false });
+    const current = await requestRouteWithAuth({ start, end, date: requestDate, time: queryTime, arriveBy: false }, { signal: req.signal });
     if (current.response.ok && isRoutePayload(current.data) && hasItinerary(current.data)) {
-      current.data._jalan = { service: planned ? 'planned' : 'now', requestedDate: now.date, requestedTime: queryTime, timeMode: requestedMode };
+      current.data._jalan = { service: planned ? 'planned' : 'now', requestedDate: requestDate, requestedTime: queryTime, timeMode: requestedMode };
       return res.status(200).json(current.data);
     }
 
@@ -210,7 +267,7 @@ module.exports = async function handler(req, res) {
       if (!planned) {
         const nextDate = now.hour < 5 ? now.date : addDay(now.date);
         const nextTime = '05:30:00';
-        const next = await requestRoute({ token, start, end, date: nextDate, time: nextTime, arriveBy: false });
+        const next = await requestRouteWithAuth({ start, end, date: nextDate, time: nextTime, arriveBy: false }, { signal: req.signal });
         if (next.response.ok && isRoutePayload(next.data) && hasItinerary(next.data)) {
           next.data._jalan = { service: 'next', requestedDate: nextDate, requestedTime: nextTime, timeMode: 'depart', reason: 'No public transport route was available for the current time.' };
           return res.status(200).json(next.data);
@@ -227,4 +284,12 @@ module.exports = async function handler(req, res) {
   }
 };
 
-module.exports._test = { isRoutePayload, isRouteResponsePayload, requestRoute, sgDateTime };
+module.exports._test = {
+  isRoutePayload,
+  isRouteResponsePayload,
+  requestRoute,
+  requestRouteWithAuth,
+  sgDateTime,
+  parseIsoDate,
+  sgTimestampFromIsoDate,
+};
